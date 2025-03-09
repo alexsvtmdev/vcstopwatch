@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 
 void main() {
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key}); // Используем super параметры и const конструктор
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -19,34 +20,39 @@ class MyApp extends StatelessWidget {
 }
 
 class TimerPage extends StatefulWidget {
-  const TimerPage({
-    super.key,
-  }); // Используем super параметры и const конструктор
+  const TimerPage({super.key});
 
   @override
   TimerPageState createState() => TimerPageState();
 }
 
 class TimerPageState extends State<TimerPage> {
-  static const duration = Duration(milliseconds: 10); // Убрано лишнее const
+  final FlutterTts flutterTts = FlutterTts();
+  Timer? timer;
   int timeMilliseconds = 0;
   bool isActive = false;
-  Timer? timer;
+  double volume = 0.5;
+  int intervalSeconds = 10;
+
+  @override
+  void initState() {
+    super.initState();
+    timer = Timer.periodic(const Duration(milliseconds: 10), (Timer t) {
+      handleTick();
+    });
+  }
 
   void handleTick() {
     if (isActive) {
       setState(() {
         timeMilliseconds += 10;
       });
+      int totalSeconds = timeMilliseconds ~/ 1000;
+      if (totalSeconds % intervalSeconds == 0) {
+        flutterTts.setVolume(volume);
+        flutterTts.speak('$totalSeconds seconds');
+      }
     }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    timer = Timer.periodic(duration, (Timer t) {
-      handleTick();
-    });
   }
 
   @override
@@ -57,21 +63,54 @@ class TimerPageState extends State<TimerPage> {
         "${minutes.toString().padLeft(2, '0')}:${seconds.toStringAsFixed(2).padLeft(5, '0')}";
 
     return Scaffold(
-      appBar: AppBar(title: Text('VoiceControl Timer')),
+      appBar: AppBar(
+        title: const Text('VoiceControl Timer'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => SettingsPage(state: this),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             Text(
               formattedTime,
-              style: TextStyle(fontSize: 48, color: Colors.white),
+              style: const TextStyle(fontSize: 60, color: Colors.white),
             ),
-            SizedBox(height: 24),
+            const SizedBox(height: 40),
             Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: <Widget>[
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(shape: StadiumBorder()),
+                  style: ElevatedButton.styleFrom(
+                    shape: const StadiumBorder(),
+                    backgroundColor: Colors.blueAccent, // изменено с primary
+                    foregroundColor: Colors.white, // изменено с onPrimary
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      isActive = false;
+                      timeMilliseconds = 0;
+                    });
+                  },
+                  child: const Text('Reset'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    shape: const StadiumBorder(),
+                    backgroundColor: Colors.green, // изменено с primary
+                    foregroundColor: Colors.white, // изменено с onPrimary
+                  ),
                   onPressed: () {
                     setState(() {
                       isActive = !isActive;
@@ -79,21 +118,61 @@ class TimerPageState extends State<TimerPage> {
                   },
                   child: Text(isActive ? 'Pause' : 'Start'),
                 ),
-                SizedBox(width: 8),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(shape: StadiumBorder()),
-                  onPressed: () {
-                    setState(() {
-                      isActive = false;
-                      timeMilliseconds = 0;
-                    });
-                  },
-                  child: Text('Reset'),
-                ),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class SettingsPage extends StatelessWidget {
+  final TimerPageState state;
+
+  SettingsPage({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Settings")),
+      body: ListView(
+        children: [
+          ListTile(
+            title: const Text('Volume Control'),
+            subtitle: Slider(
+              value: state.volume,
+              min: 0.0,
+              max: 1.0,
+              divisions: 10,
+              label: "${(state.volume * 100).toInt()}%",
+              onChanged: (double value) {
+                state.setState(() {
+                  state.volume = value;
+                });
+              },
+            ),
+          ),
+          ListTile(
+            title: const Text('Speech Interval'),
+            trailing: DropdownButton<int>(
+              value: state.intervalSeconds,
+              items: const [
+                DropdownMenuItem(value: 10, child: Text("10 Seconds")),
+                DropdownMenuItem(value: 20, child: Text("20 Seconds")),
+                DropdownMenuItem(value: 30, child: Text("30 Seconds")),
+                DropdownMenuItem(value: 60, child: Text("1 Minute")),
+              ],
+              onChanged: (int? newValue) {
+                if (newValue != null) {
+                  state.setState(() {
+                    state.intervalSeconds = newValue;
+                  });
+                }
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
