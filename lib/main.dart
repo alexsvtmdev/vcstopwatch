@@ -52,13 +52,17 @@ class TimerPageState extends State<TimerPage> {
       int minutes = totalSeconds ~/ 60;
       int seconds = totalSeconds % 60;
 
-      // Announce time immediately on start and then at set intervals.
+      // Announce just the minutes when seconds are zero (on the minute) and announce both otherwise.
       if (totalSeconds > 0 && totalSeconds % intervalSeconds == 0) {
-        String timeAnnouncement = "";
-        if (minutes > 0) {
-          timeAnnouncement += "$minutes minute${minutes > 1 ? "s" : ""} ";
+        String timeAnnouncement;
+        if (seconds == 0) {
+          // Announce only the minutes if it's exactly on the minute.
+          timeAnnouncement = "$minutes minute${minutes > 1 ? "s" : ""}";
+        } else {
+          // Announce both minutes and seconds at specified intervals, if not on the minute.
+          timeAnnouncement =
+              "${minutes > 0 ? "$minutes minute${minutes > 1 ? "s" : ""} and " : ""}$seconds second${seconds != 1 ? "s" : ""}";
         }
-        timeAnnouncement += "$seconds second${seconds != 1 ? "s" : ""}";
         flutterTts.speak(timeAnnouncement);
       }
     }
