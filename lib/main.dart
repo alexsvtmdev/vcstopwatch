@@ -1,37 +1,42 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 void main() {
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key}); // Используем super параметры и const конструктор
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'VoiceControl Timer',
-      theme: ThemeData(primarySwatch: Colors.blue),
-      home: TimerPage(),
+      theme: ThemeData(primarySwatch: Colors.blue, brightness: Brightness.dark),
+      home: const TimerPage(),
     );
   }
 }
 
 class TimerPage extends StatefulWidget {
+  const TimerPage({
+    super.key,
+  }); // Используем super параметры и const конструктор
+
   @override
-  _TimerPageState createState() => _TimerPageState();
+  TimerPageState createState() => TimerPageState();
 }
 
-class _TimerPageState extends State<TimerPage> {
-  static const duration = const Duration(seconds: 1);
-  int secondsPassed = 0;
+class TimerPageState extends State<TimerPage> {
+  static const duration = Duration(milliseconds: 10); // Убрано лишнее const
+  int timeMilliseconds = 0;
   bool isActive = false;
   Timer? timer;
 
   void handleTick() {
     if (isActive) {
       setState(() {
-        secondsPassed = secondsPassed + 1;
+        timeMilliseconds += 10;
       });
     }
   }
@@ -46,8 +51,10 @@ class _TimerPageState extends State<TimerPage> {
 
   @override
   Widget build(BuildContext context) {
-    int seconds = secondsPassed % 60;
-    int minutes = secondsPassed ~/ 60;
+    double seconds = (timeMilliseconds / 1000) % 60;
+    int minutes = (timeMilliseconds / (1000 * 60)).floor();
+    String formattedTime =
+        "${minutes.toString().padLeft(2, '0')}:${seconds.toStringAsFixed(2).padLeft(5, '0')}";
 
     return Scaffold(
       appBar: AppBar(title: Text('VoiceControl Timer')),
@@ -55,12 +62,16 @@ class _TimerPageState extends State<TimerPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            Text('$minutes:$seconds', style: TextStyle(fontSize: 48)),
+            Text(
+              formattedTime,
+              style: TextStyle(fontSize: 48, color: Colors.white),
+            ),
             SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
                 ElevatedButton(
+                  style: ElevatedButton.styleFrom(shape: StadiumBorder()),
                   onPressed: () {
                     setState(() {
                       isActive = !isActive;
@@ -70,10 +81,11 @@ class _TimerPageState extends State<TimerPage> {
                 ),
                 SizedBox(width: 8),
                 ElevatedButton(
+                  style: ElevatedButton.styleFrom(shape: StadiumBorder()),
                   onPressed: () {
                     setState(() {
                       isActive = false;
-                      secondsPassed = 0;
+                      timeMilliseconds = 0;
                     });
                   },
                   child: Text('Reset'),
