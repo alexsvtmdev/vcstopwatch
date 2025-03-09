@@ -52,13 +52,14 @@ class TimerPageState extends State<TimerPage> {
       int minutes = totalSeconds ~/ 60;
       int seconds = totalSeconds % 60;
 
-      if (totalSeconds % intervalSeconds == 0) {
-        String toSpeak = '';
+      // Announce time immediately on start and then at set intervals.
+      if (totalSeconds > 0 && totalSeconds % intervalSeconds == 0) {
+        String timeAnnouncement = "";
         if (minutes > 0) {
-          toSpeak += '$minutes minute${minutes > 1 ? "s" : ""} ';
+          timeAnnouncement += "$minutes minute${minutes > 1 ? "s" : ""} ";
         }
-        toSpeak += '$seconds second${seconds != 1 ? "s" : ""}';
-        flutterTts.speak(toSpeak);
+        timeAnnouncement += "$seconds second${seconds != 1 ? "s" : ""}";
+        flutterTts.speak(timeAnnouncement);
       }
     }
   }
@@ -123,13 +124,14 @@ class TimerPageState extends State<TimerPage> {
                   onPressed: () {
                     if (!isActive) {
                       flutterTts.speak('Timer started');
+                      // Start the timer here
+                      timer = Timer.periodic(const Duration(milliseconds: 10), (
+                        Timer t,
+                      ) {
+                        handleTick();
+                      });
                     } else {
-                      int totalSeconds = timeMilliseconds ~/ 1000;
-                      int minutes = totalSeconds ~/ 60;
-                      int seconds = totalSeconds % 60;
-                      String timeSpoken =
-                          "${minutes > 0 ? "$minutes minutes and " : ""}$seconds seconds";
-                      flutterTts.speak("Timer stopped at $timeSpoken");
+                      flutterTts.speak('Timer paused at $formattedTime');
                     }
                     setState(() {
                       isActive = !isActive;
@@ -146,11 +148,16 @@ class TimerPageState extends State<TimerPage> {
   }
 }
 
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   final TimerPageState state;
 
-  SettingsPage({required this.state});
+  const SettingsPage({Key? key, required this.state}) : super(key: key);
 
+  @override
+  _SettingsPageState createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -160,14 +167,15 @@ class SettingsPage extends StatelessWidget {
           ListTile(
             title: const Text('Volume Control'),
             subtitle: Slider(
-              value: state.volume,
+              value: widget.state.volume,
               min: 0.0,
               max: 1.0,
               divisions: 10,
-              label: "${(state.volume * 100).toInt()}%",
+              label: "${(widget.state.volume * 100).toInt()}%",
               onChanged: (double value) {
-                state.setState(() {
-                  state.volume = value;
+                setState(() {
+                  widget.state.volume = value;
+                  widget.state.flutterTts.setVolume(value);
                 });
               },
             ),
@@ -175,7 +183,7 @@ class SettingsPage extends StatelessWidget {
           ListTile(
             title: const Text('Speech Interval'),
             trailing: DropdownButton<int>(
-              value: state.intervalSeconds,
+              value: widget.state.intervalSeconds,
               items: const [
                 DropdownMenuItem(value: 10, child: Text("10 Seconds")),
                 DropdownMenuItem(value: 20, child: Text("20 Seconds")),
@@ -184,8 +192,8 @@ class SettingsPage extends StatelessWidget {
               ],
               onChanged: (int? newValue) {
                 if (newValue != null) {
-                  state.setState(() {
-                    state.intervalSeconds = newValue;
+                  setState(() {
+                    widget.state.intervalSeconds = newValue;
                   });
                 }
               },
