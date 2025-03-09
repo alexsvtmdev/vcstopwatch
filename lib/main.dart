@@ -40,6 +40,7 @@ class TimerPageState extends State<TimerPage> {
     timer = Timer.periodic(const Duration(milliseconds: 10), (Timer t) {
       handleTick();
     });
+    flutterTts.setVolume(volume);
   }
 
   void handleTick() {
@@ -48,9 +49,16 @@ class TimerPageState extends State<TimerPage> {
         timeMilliseconds += 10;
       });
       int totalSeconds = timeMilliseconds ~/ 1000;
+      int minutes = totalSeconds ~/ 60;
+      int seconds = totalSeconds % 60;
+
       if (totalSeconds % intervalSeconds == 0) {
-        flutterTts.setVolume(volume);
-        flutterTts.speak('$totalSeconds seconds');
+        String toSpeak = '';
+        if (minutes > 0) {
+          toSpeak += '$minutes minute${minutes > 1 ? "s" : ""} ';
+        }
+        toSpeak += '$seconds second${seconds != 1 ? "s" : ""}';
+        flutterTts.speak(toSpeak);
       }
     }
   }
@@ -94,13 +102,14 @@ class TimerPageState extends State<TimerPage> {
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     shape: const StadiumBorder(),
-                    backgroundColor: Colors.blueAccent, // изменено с primary
-                    foregroundColor: Colors.white, // изменено с onPrimary
+                    backgroundColor: Colors.blueAccent,
+                    foregroundColor: Colors.white,
                   ),
                   onPressed: () {
                     setState(() {
                       isActive = false;
                       timeMilliseconds = 0;
+                      flutterTts.speak('Timer reset');
                     });
                   },
                   child: const Text('Reset'),
@@ -108,10 +117,20 @@ class TimerPageState extends State<TimerPage> {
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     shape: const StadiumBorder(),
-                    backgroundColor: Colors.green, // изменено с primary
-                    foregroundColor: Colors.white, // изменено с onPrimary
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
                   ),
                   onPressed: () {
+                    if (!isActive) {
+                      flutterTts.speak('Timer started');
+                    } else {
+                      int totalSeconds = timeMilliseconds ~/ 1000;
+                      int minutes = totalSeconds ~/ 60;
+                      int seconds = totalSeconds % 60;
+                      String timeSpoken =
+                          "${minutes > 0 ? "$minutes minutes and " : ""}$seconds seconds";
+                      flutterTts.speak("Timer stopped at $timeSpoken");
+                    }
                     setState(() {
                       isActive = !isActive;
                     });
