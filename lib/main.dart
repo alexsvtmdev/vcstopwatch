@@ -37,7 +37,7 @@ class TimerPageState extends State<TimerPage> {
   @override
   void initState() {
     super.initState();
-    // Создаём таймер один раз, который каждую 10 мс вызывает handleTick
+    // Создаем таймер один раз, который каждые 10 мс вызывает handleTick()
     timer = Timer.periodic(const Duration(milliseconds: 10), (Timer t) {
       handleTick();
     });
@@ -53,14 +53,12 @@ class TimerPageState extends State<TimerPage> {
       int minutes = totalSeconds ~/ 60;
       int seconds = totalSeconds % 60;
 
-      // Осуществляем голосовое оповещение с заданным интервалом
+      // Голосовое оповещение происходит во время работы таймера, на заданном интервале.
       if (totalSeconds > 0 && totalSeconds % intervalSeconds == 0) {
         String timeAnnouncement;
         if (seconds == 0) {
-          // Если секунд ровно 0, произносится только количество минут
           timeAnnouncement = "$minutes minute${minutes > 1 ? "s" : ""}";
         } else {
-          // Иначе произносится минуты и секунды
           timeAnnouncement =
               "${minutes > 0 ? "$minutes minute${minutes > 1 ? "s" : ""} and " : ""}$seconds second${seconds != 1 ? "s" : ""}";
         }
@@ -99,20 +97,22 @@ class TimerPageState extends State<TimerPage> {
           ),
         ],
       ),
-      body: Center(
+      body: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 40.0, horizontal: 20.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: <Widget>[
+            // Отображение времени с увеличенным шрифтом
             Text(
               formattedTime,
-              style: const TextStyle(fontSize: 60, color: Colors.white),
+              style: const TextStyle(fontSize: 80, color: Colors.white),
             ),
-            const SizedBox(height: 40),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: <Widget>[
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(150, 60),
                     shape: const StadiumBorder(),
                     backgroundColor: Colors.blueAccent,
                     foregroundColor: Colors.white,
@@ -128,6 +128,7 @@ class TimerPageState extends State<TimerPage> {
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(150, 60),
                     shape: const StadiumBorder(),
                     backgroundColor: Colors.green,
                     foregroundColor: Colors.white,
@@ -135,14 +136,24 @@ class TimerPageState extends State<TimerPage> {
                   onPressed: () {
                     if (!isActive) {
                       flutterTts.speak('Timer started');
+                      setState(() {
+                        isActive = true;
+                      });
                     } else {
-                      flutterTts.speak('Timer paused at $formattedTime');
+                      // При нажатии на кнопку Stop произносится общее количество минут и секунд
+                      int totalSeconds = timeMilliseconds ~/ 1000;
+                      int displayMinutes = totalSeconds ~/ 60;
+                      int displaySeconds = totalSeconds % 60;
+                      String announcement =
+                          "Timer stopped at $displayMinutes minute${displayMinutes != 1 ? "s" : ""} and $displaySeconds second${displaySeconds != 1 ? "s" : ""}";
+                      flutterTts.speak(announcement);
+                      setState(() {
+                        isActive = false;
+                      });
                     }
-                    setState(() {
-                      isActive = !isActive;
-                    });
                   },
-                  child: Text(isActive ? 'Pause' : 'Start'),
+                  // Если таймер активен, кнопка отображает "Stop", иначе "Start"
+                  child: Text(isActive ? 'Stop' : 'Start'),
                 ),
               ],
             ),
