@@ -32,15 +32,15 @@ class TimerPageState extends State<TimerPage> {
   Timer? timer;
   int timeMilliseconds = 0;
   bool isActive = false;
-  double volume = 1.0; // Default volume: maximum
-  int intervalSeconds = 30; // Default speech interval: 30 seconds
+  double volume = 1.0; // Максимальная громкость по умолчанию
+  int intervalSeconds = 30; // Интервал произношения по умолчанию: 30 секунд
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
     flutterTts.setVolume(volume);
-    // Создаем таймер один раз, который каждые 10 мс вызывает handleTick()
+    // Создаем таймер, который каждые 10 мс вызывает handleTick()
     timer = Timer.periodic(const Duration(milliseconds: 10), (Timer t) {
       handleTick();
     });
@@ -189,28 +189,43 @@ class SettingsPage extends StatefulWidget {
 class SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      // Учитываем выемку экрана и клавиатуру
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text("Settings"),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () {
-              Navigator.pop(context);
-            },
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.close),
-              onPressed: () => Navigator.pop(context),
+    return Scaffold(
+      // Оборачиваем AppBar в PreferredSize с дополнительным отступом сверху,
+      // чтобы сместить заголовок и кнопку назад вниз.
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight + 20),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.only(
+              top: 20,
+            ), // дополнительный отступ сверху
+            child: AppBar(
+              title: const Text("Settings"),
+              leading: Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ),
+              actions: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
+              ],
+              toolbarHeight: kToolbarHeight + 20,
             ),
-          ],
+          ),
         ),
-        body: ListView(
+      ),
+      // Оборачиваем тело настроек в SafeArea для дополнительного учета системных отступов
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
           children: [
             ListTile(
               title: const Text('Volume Control'),
