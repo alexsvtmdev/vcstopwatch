@@ -180,13 +180,13 @@ class TimerPageState extends State<TimerPage> {
 
 class SettingsPage extends StatefulWidget {
   final TimerPageState state;
-  const SettingsPage({Key? key, required this.state}) : super(key: key);
+  const SettingsPage({super.key, required this.state});
 
   @override
-  _SettingsPageState createState() => _SettingsPageState();
+  SettingsPageState createState() => SettingsPageState();
 }
 
-class _SettingsPageState extends State<SettingsPage> {
+class SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Padding(
