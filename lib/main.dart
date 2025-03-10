@@ -37,6 +37,7 @@ class TimerPageState extends State<TimerPage> {
   @override
   void initState() {
     super.initState();
+    // Создаём таймер один раз, который каждую 10 мс вызывает handleTick
     timer = Timer.periodic(const Duration(milliseconds: 10), (Timer t) {
       handleTick();
     });
@@ -52,20 +53,26 @@ class TimerPageState extends State<TimerPage> {
       int minutes = totalSeconds ~/ 60;
       int seconds = totalSeconds % 60;
 
-      // Announce just the minutes when seconds are zero (on the minute) and announce both otherwise.
+      // Осуществляем голосовое оповещение с заданным интервалом
       if (totalSeconds > 0 && totalSeconds % intervalSeconds == 0) {
         String timeAnnouncement;
         if (seconds == 0) {
-          // Announce only the minutes if it's exactly on the minute.
+          // Если секунд ровно 0, произносится только количество минут
           timeAnnouncement = "$minutes minute${minutes > 1 ? "s" : ""}";
         } else {
-          // Announce both minutes and seconds at specified intervals, if not on the minute.
+          // Иначе произносится минуты и секунды
           timeAnnouncement =
               "${minutes > 0 ? "$minutes minute${minutes > 1 ? "s" : ""} and " : ""}$seconds second${seconds != 1 ? "s" : ""}";
         }
         flutterTts.speak(timeAnnouncement);
       }
     }
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -114,8 +121,8 @@ class TimerPageState extends State<TimerPage> {
                     setState(() {
                       isActive = false;
                       timeMilliseconds = 0;
-                      flutterTts.speak('Timer reset');
                     });
+                    flutterTts.speak('Timer reset');
                   },
                   child: const Text('Reset'),
                 ),
@@ -128,12 +135,6 @@ class TimerPageState extends State<TimerPage> {
                   onPressed: () {
                     if (!isActive) {
                       flutterTts.speak('Timer started');
-                      // Start the timer here
-                      timer = Timer.periodic(const Duration(milliseconds: 10), (
-                        Timer t,
-                      ) {
-                        handleTick();
-                      });
                     } else {
                       flutterTts.speak('Timer paused at $formattedTime');
                     }
@@ -154,7 +155,6 @@ class TimerPageState extends State<TimerPage> {
 
 class SettingsPage extends StatefulWidget {
   final TimerPageState state;
-
   const SettingsPage({Key? key, required this.state}) : super(key: key);
 
   @override
