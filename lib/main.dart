@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 void main() {
   runApp(const MyApp());
@@ -34,16 +35,27 @@ class TimerPageState extends State<TimerPage> {
   bool isActive = false;
   double volume = 1.0; // Максимальная громкость по умолчанию
   int intervalSeconds = 30; // Интервал произношения по умолчанию: 30 секунд
+  bool voiceControlEnabled = true; // Голосовое управление включено по умолчанию
+
+  // Распознавание речи
+  late stt.SpeechToText _speech;
+  bool _isListening = false;
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
     flutterTts.setVolume(volume);
-    // Создаем таймер, который каждые 10 мс вызывает handleTick()
+    // Запускаем таймер, который каждые 10 мс вызывает handleTick()
     timer = Timer.periodic(const Duration(milliseconds: 10), (Timer t) {
       handleTick();
     });
+    _initSpeech();
+  }
+
+  Future<void> _initSpeech() async {
+    _speech = stt.SpeechToText();
+    await _speech.initialize();
   }
 
   Future<void> _loadSettings() async {
@@ -51,6 +63,7 @@ class TimerPageState extends State<TimerPage> {
     setState(() {
       volume = prefs.getDouble('volume') ?? 1.0;
       intervalSeconds = prefs.getInt('intervalSeconds') ?? 30;
+      voiceControlEnabled = prefs.getBool('voiceControlEnabled') ?? true;
     });
     flutterTts.setVolume(volume);
   }
@@ -59,6 +72,7 @@ class TimerPageState extends State<TimerPage> {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('volume', volume);
     await prefs.setInt('intervalSeconds', intervalSeconds);
+    await prefs.setBool('voiceControlEnabled', voiceControlEnabled);
   }
 
   void handleTick() {
@@ -69,8 +83,6 @@ class TimerPageState extends State<TimerPage> {
       int totalSeconds = timeMilliseconds ~/ 1000;
       int minutes = totalSeconds ~/ 60;
       int seconds = totalSeconds % 60;
-
-      // Голосовое оповещение происходит на заданном интервале
       if (totalSeconds > 0 && totalSeconds % intervalSeconds == 0) {
         String timeAnnouncement;
         if (seconds == 0) {
@@ -84,9 +96,63 @@ class TimerPageState extends State<TimerPage> {
     }
   }
 
+  void _toggleListening() async {
+    if (!voiceControlEnabled) return;
+    if (!_isListening) {
+      bool available = await _speech.initialize();
+      if (available) {
+        setState(() {
+          _isListening = true;
+        });
+        _speech.listen(
+          onResult: (result) {
+            String recognized = result.recognizedWords.toLowerCase();
+            if (recognized.contains("start")) {
+              if (!isActive) {
+                flutterTts.speak("Timer started");
+                setState(() {
+                  isActive = true;
+                });
+              }
+            } else if (recognized.contains("stop")) {
+              if (isActive) {
+                int totalSeconds = timeMilliseconds ~/ 1000;
+                int displayMinutes = totalSeconds ~/ 60;
+                int displaySeconds = totalSeconds % 60;
+                String announcement =
+                    "Timer stopped at $displayMinutes minute${displayMinutes != 1 ? "s" : ""} and $displaySeconds second${displaySeconds != 1 ? "s" : ""}";
+                flutterTts.speak(announcement);
+                setState(() {
+                  isActive = false;
+                });
+              }
+            } else if (recognized.contains("reset")) {
+              setState(() {
+                isActive = false;
+                timeMilliseconds = 0;
+              });
+              flutterTts.speak("Timer reset");
+            }
+            _speech.stop();
+            setState(() {
+              _isListening = false;
+            });
+          },
+          localeId: "en_US",
+        );
+      }
+    } else {
+      _speech.stop();
+      setState(() {
+        _isListening = false;
+      });
+    }
+  }
+
   @override
   void dispose() {
     timer?.cancel();
+    _speech.stop();
     super.dispose();
   }
 
@@ -104,7 +170,6 @@ class TimerPageState extends State<TimerPage> {
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {
-              // Передаем ссылку на текущее состояние (this) в SettingsPage
               showModalBottomSheet(
                 context: context,
                 isScrollControlled: true,
@@ -174,6 +239,13 @@ class TimerPageState extends State<TimerPage> {
           ],
         ),
       ),
+      floatingActionButton:
+          voiceControlEnabled
+              ? FloatingActionButton(
+                onPressed: _toggleListening,
+                child: Icon(_isListening ? Icons.mic : Icons.mic_none),
+              )
+              : null,
     );
   }
 }
@@ -190,8 +262,7 @@ class SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Оборачиваем AppBar в PreferredSize с дополнительным отступом сверху,
-      // чтобы сместить заголовок и кнопку назад вниз.
+      // Используем PreferredSize и Padding для смещения AppBar вниз
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(kToolbarHeight + 20),
         child: SafeArea(
@@ -222,7 +293,6 @@ class SettingsPageState extends State<SettingsPage> {
           ),
         ),
       ),
-      // Оборачиваем тело настроек в SafeArea для дополнительного учета системных отступов
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -263,6 +333,16 @@ class SettingsPageState extends State<SettingsPage> {
                   }
                 },
               ),
+            ),
+            SwitchListTile(
+              title: const Text('Voice Control'),
+              value: widget.state.voiceControlEnabled,
+              onChanged: (bool value) {
+                setState(() {
+                  widget.state.voiceControlEnabled = value;
+                  widget.state._saveSettings();
+                });
+              },
             ),
           ],
         ),

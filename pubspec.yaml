@@ -36,6 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_tts: ^4.2.2 # Добавленная зависимость для TTS
   shared_preferences: ^2.0.15 # Добавленная зависимость для сохранения данных
+  speech_to_text: ^7.0.0 # Добавленная зависимость для STT
 
 dev_dependencies:
   flutter_test:
