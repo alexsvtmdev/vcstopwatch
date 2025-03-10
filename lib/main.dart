@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const MyApp());
@@ -31,17 +32,33 @@ class TimerPageState extends State<TimerPage> {
   Timer? timer;
   int timeMilliseconds = 0;
   bool isActive = false;
-  double volume = 0.5;
-  int intervalSeconds = 10;
+  double volume = 1.0; // Default volume: maximum
+  int intervalSeconds = 30; // Default speech interval: 30 seconds
 
   @override
   void initState() {
     super.initState();
+    _loadSettings();
+    flutterTts.setVolume(volume);
     // Создаем таймер один раз, который каждые 10 мс вызывает handleTick()
     timer = Timer.periodic(const Duration(milliseconds: 10), (Timer t) {
       handleTick();
     });
+  }
+
+  Future<void> _loadSettings() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    setState(() {
+      volume = prefs.getDouble('volume') ?? 1.0;
+      intervalSeconds = prefs.getInt('intervalSeconds') ?? 30;
+    });
     flutterTts.setVolume(volume);
+  }
+
+  Future<void> _saveSettings() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('volume', volume);
+    await prefs.setInt('intervalSeconds', intervalSeconds);
   }
 
   void handleTick() {
@@ -53,14 +70,14 @@ class TimerPageState extends State<TimerPage> {
       int minutes = totalSeconds ~/ 60;
       int seconds = totalSeconds % 60;
 
-      // Голосовое оповещение происходит во время работы таймера, на заданном интервале.
+      // Голосовое оповещение происходит на заданном интервале
       if (totalSeconds > 0 && totalSeconds % intervalSeconds == 0) {
         String timeAnnouncement;
         if (seconds == 0) {
-          timeAnnouncement = "$minutes minute${minutes > 1 ? "s" : ""}";
+          timeAnnouncement = "$minutes minute${minutes != 1 ? "s" : ""}";
         } else {
           timeAnnouncement =
-              "${minutes > 0 ? "$minutes minute${minutes > 1 ? "s" : ""} and " : ""}$seconds second${seconds != 1 ? "s" : ""}";
+              "${minutes > 0 ? "$minutes minute${minutes != 1 ? "s" : ""} and " : ""}$seconds second${seconds != 1 ? "s" : ""}";
         }
         flutterTts.speak(timeAnnouncement);
       }
@@ -75,10 +92,10 @@ class TimerPageState extends State<TimerPage> {
 
   @override
   Widget build(BuildContext context) {
-    double seconds = (timeMilliseconds / 1000) % 60;
-    int minutes = (timeMilliseconds / (1000 * 60)).floor();
+    double displaySeconds = (timeMilliseconds / 1000) % 60;
+    int displayMinutes = (timeMilliseconds / (1000 * 60)).floor();
     String formattedTime =
-        "${minutes.toString().padLeft(2, '0')}:${seconds.toStringAsFixed(2).padLeft(5, '0')}";
+        "${displayMinutes.toString().padLeft(2, '0')}:${displaySeconds.toStringAsFixed(2).padLeft(5, '0')}";
 
     return Scaffold(
       appBar: AppBar(
@@ -87,11 +104,11 @@ class TimerPageState extends State<TimerPage> {
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => SettingsPage(state: this),
-                ),
+              // Передаем ссылку на текущее состояние (this) в SettingsPage
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                builder: (context) => SettingsPage(state: this),
               );
             },
           ),
@@ -101,15 +118,14 @@ class TimerPageState extends State<TimerPage> {
         padding: const EdgeInsets.symmetric(vertical: 40.0, horizontal: 20.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: <Widget>[
-            // Отображение времени с увеличенным шрифтом
+          children: [
             Text(
               formattedTime,
               style: const TextStyle(fontSize: 80, color: Colors.white),
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: <Widget>[
+              children: [
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     minimumSize: const Size(150, 60),
@@ -140,7 +156,6 @@ class TimerPageState extends State<TimerPage> {
                         isActive = true;
                       });
                     } else {
-                      // При нажатии на кнопку Stop произносится общее количество минут и секунд
                       int totalSeconds = timeMilliseconds ~/ 1000;
                       int displayMinutes = totalSeconds ~/ 60;
                       int displaySeconds = totalSeconds % 60;
@@ -152,7 +167,6 @@ class TimerPageState extends State<TimerPage> {
                       });
                     }
                   },
-                  // Если таймер активен, кнопка отображает "Stop", иначе "Start"
                   child: Text(isActive ? 'Stop' : 'Start'),
                 ),
               ],
@@ -175,46 +189,68 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Settings")),
-      body: ListView(
-        children: [
-          ListTile(
-            title: const Text('Volume Control'),
-            subtitle: Slider(
-              value: widget.state.volume,
-              min: 0.0,
-              max: 1.0,
-              divisions: 10,
-              label: "${(widget.state.volume * 100).toInt()}%",
-              onChanged: (double value) {
-                setState(() {
-                  widget.state.volume = value;
-                  widget.state.flutterTts.setVolume(value);
-                });
-              },
-            ),
+    return Padding(
+      // Учитываем выемку экрана и клавиатуру
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text("Settings"),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              Navigator.pop(context);
+            },
           ),
-          ListTile(
-            title: const Text('Speech Interval'),
-            trailing: DropdownButton<int>(
-              value: widget.state.intervalSeconds,
-              items: const [
-                DropdownMenuItem(value: 10, child: Text("10 Seconds")),
-                DropdownMenuItem(value: 20, child: Text("20 Seconds")),
-                DropdownMenuItem(value: 30, child: Text("30 Seconds")),
-                DropdownMenuItem(value: 60, child: Text("1 Minute")),
-              ],
-              onChanged: (int? newValue) {
-                if (newValue != null) {
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+        body: ListView(
+          children: [
+            ListTile(
+              title: const Text('Volume Control'),
+              subtitle: Slider(
+                value: widget.state.volume,
+                min: 0.0,
+                max: 1.0,
+                divisions: 10,
+                label: "${(widget.state.volume * 100).toInt()}%",
+                onChanged: (double value) {
                   setState(() {
-                    widget.state.intervalSeconds = newValue;
+                    widget.state.volume = value;
+                    widget.state.flutterTts.setVolume(value);
+                    widget.state._saveSettings();
                   });
-                }
-              },
+                },
+              ),
             ),
-          ),
-        ],
+            ListTile(
+              title: const Text('Speech Interval'),
+              trailing: DropdownButton<int>(
+                value: widget.state.intervalSeconds,
+                items: const [
+                  DropdownMenuItem(value: 10, child: Text("10 Seconds")),
+                  DropdownMenuItem(value: 20, child: Text("20 Seconds")),
+                  DropdownMenuItem(value: 30, child: Text("30 Seconds")),
+                  DropdownMenuItem(value: 60, child: Text("1 Minute")),
+                ],
+                onChanged: (int? newValue) {
+                  if (newValue != null) {
+                    setState(() {
+                      widget.state.intervalSeconds = newValue;
+                      widget.state._saveSettings();
+                    });
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
