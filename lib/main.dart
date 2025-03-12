@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_tts/flutter_tts.dart';
@@ -11,6 +12,7 @@ void main() {
   runApp(const MyApp());
 }
 
+/// Основное приложение.
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
   @override
@@ -23,6 +25,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
+/// Главная страница.
 class TimerPage extends StatefulWidget {
   const TimerPage({super.key});
   @override
@@ -31,26 +34,26 @@ class TimerPage extends StatefulWidget {
 
 class TimerPageState extends State<TimerPage> {
   final FlutterTts flutterTts = FlutterTts();
-  Timer? timer;
   int timeMilliseconds = 0;
   bool isActive = false;
   double volume = 0.5;
   int intervalSeconds = 10;
-  // Голосовое распознавание включено по умолчанию.
   bool voiceRecognitionEnabled = true;
   PicovoiceManager? _picovoiceManager;
   bool isInitializingRhino = false;
+
+  // Порты для обмена с изолятом таймера.
+  Isolate? timerIsolate;
+  SendPort? timerSendPort;
+  ReceivePort? timerReceivePort;
 
   @override
   void initState() {
     super.initState();
     debugPrint("initState: Начало инициализации TimerPage");
     _loadVoiceRecognitionSetting();
-    timer = Timer.periodic(
-      const Duration(milliseconds: 10),
-      (_) => _handleTick(),
-    );
     flutterTts.setVolume(volume);
+    _initTimerIsolate();
     // Отложенная инициализация Rhino через 1 секунду.
     Future.delayed(const Duration(seconds: 1), () {
       if (voiceRecognitionEnabled) {
@@ -92,7 +95,7 @@ class TimerPageState extends State<TimerPage> {
     }
   }
 
-  /// Копирует файл ассета во временную директорию и возвращает абсолютный путь.
+  /// Копирует файл ассета во временную директорию и возвращает его абсолютный путь.
   Future<String> _loadAssetToFile(String assetPath, String fileName) async {
     final byteData = await rootBundle.load(assetPath);
     final tempDir = await getTemporaryDirectory();
@@ -155,6 +158,27 @@ class TimerPageState extends State<TimerPage> {
     return file.path;
   }
 
+  /// Инициализирует изолят таймера для обновления времени.
+  Future<void> _initTimerIsolate() async {
+    timerReceivePort = ReceivePort();
+    timerIsolate = await Isolate.spawn(
+      timerIsolateEntry,
+      timerReceivePort!.sendPort,
+    );
+    // Преобразуем поток в broadcast, чтобы можно было подписаться несколько раз.
+    final broadcastStream = timerReceivePort!.asBroadcastStream();
+    // Получаем первый элемент, который должен быть SendPort из изолята.
+    timerSendPort = await broadcastStream.first as SendPort;
+    // Подписываемся на обновления времени.
+    broadcastStream.listen((message) {
+      if (message is int) {
+        setState(() {
+          timeMilliseconds = message;
+        });
+      }
+    });
+  }
+
   Future<void> _initRhino() async {
     if (isInitializingRhino) return;
     setState(() {
@@ -178,7 +202,7 @@ class TimerPageState extends State<TimerPage> {
         assetKeywordPath,
         "Ok-Timer_en_android_v3_0_0.ppn",
       );
-      await _copyPorcupineModel(); // Копируем модель porcupine_params.pv в файловую систему
+      await _copyPorcupineModel();
 
       debugPrint("AccessKey: $accessKey");
       debugPrint("ContextPath (temp): $contextPath");
@@ -217,13 +241,13 @@ class TimerPageState extends State<TimerPage> {
       debugPrint("Recognized intent: ${inference['intent']}");
       switch (inference['intent']) {
         case "start":
-          _startTimer();
+          _sendTimerCommand(TimerCommand.start);
           break;
         case "stop":
-          _pauseTimer();
+          _sendTimerCommand(TimerCommand.pause);
           break;
         case "reset":
-          _resetTimer();
+          _sendTimerCommand(TimerCommand.reset);
           break;
         default:
           debugPrint("Unknown command: ${inference['intent']}");
@@ -233,22 +257,16 @@ class TimerPageState extends State<TimerPage> {
     }
   }
 
-  void _handleTick() {
-    if (isActive) {
-      setState(() {
-        timeMilliseconds += 10;
-      });
-      int totalSeconds = timeMilliseconds ~/ 1000;
-      int minutes = totalSeconds ~/ 60;
-      int seconds = totalSeconds % 60;
-      if (totalSeconds > 0 && totalSeconds % intervalSeconds == 0) {
-        String announcement =
-            seconds == 0
-                ? "$minutes minute${minutes > 1 ? "s" : ""}"
-                : "${minutes > 0 ? "$minutes minute${minutes > 1 ? "s" : ""} and " : ""}$seconds second${seconds != 1 ? "s" : ""}";
-        flutterTts.speak(announcement);
-      }
+  void _sendTimerCommand(TimerCommand command) {
+    if (timerSendPort != null) {
+      timerSendPort!.send(command);
+    } else {
+      debugPrint("TimerSendPort недоступен");
     }
+  }
+
+  void _handleTick() {
+    setState(() {}); // Обновляем UI, время приходит из изолята.
   }
 
   String _formattedTime() {
@@ -257,41 +275,12 @@ class TimerPageState extends State<TimerPage> {
     return "${minutes.toString().padLeft(2, '0')}:${seconds.toStringAsFixed(2).padLeft(5, '0')}";
   }
 
-  void _startTimer() {
-    if (!isActive) {
-      flutterTts.speak("Timer started");
-      setState(() {
-        isActive = true;
-      });
-    } else {
-      flutterTts.speak("Timer is already running");
-    }
-  }
-
-  void _pauseTimer() {
-    if (isActive) {
-      flutterTts.speak("Timer paused at ${_formattedTime()}");
-      setState(() {
-        isActive = false;
-      });
-    } else {
-      flutterTts.speak("Timer is not running");
-    }
-  }
-
-  void _resetTimer() {
-    flutterTts.speak("Timer reset");
-    setState(() {
-      isActive = false;
-      timeMilliseconds = 0;
-    });
-  }
-
   @override
   void dispose() {
-    timer?.cancel();
     _picovoiceManager?.stop();
     _picovoiceManager?.delete();
+    timerReceivePort?.close();
+    timerIsolate?.kill(priority: Isolate.immediate);
     super.dispose();
   }
 
@@ -344,7 +333,7 @@ class TimerPageState extends State<TimerPage> {
                     backgroundColor: Colors.blueAccent,
                     foregroundColor: Colors.white,
                   ),
-                  onPressed: _resetTimer,
+                  onPressed: () => _sendTimerCommand(TimerCommand.reset),
                   child: const Text("Reset"),
                 ),
                 ElevatedButton(
@@ -353,7 +342,19 @@ class TimerPageState extends State<TimerPage> {
                     backgroundColor: Colors.green,
                     foregroundColor: Colors.white,
                   ),
-                  onPressed: () => isActive ? _pauseTimer() : _startTimer(),
+                  onPressed: () {
+                    if (isActive) {
+                      _sendTimerCommand(TimerCommand.pause);
+                      setState(() {
+                        isActive = false;
+                      });
+                    } else {
+                      _sendTimerCommand(TimerCommand.start);
+                      setState(() {
+                        isActive = true;
+                      });
+                    }
+                  },
                   child: Text(isActive ? "Pause" : "Start"),
                 ),
               ],
@@ -365,6 +366,39 @@ class TimerPageState extends State<TimerPage> {
   }
 }
 
+/// Тип команд для таймера.
+enum TimerCommand { start, pause, reset }
+
+/// Точка входа для изолята таймера.
+void timerIsolateEntry(SendPort mainSendPort) {
+  int time = 0;
+  bool running = false;
+  Timer? timer;
+  final commandPort = ReceivePort();
+  // Отправляем главный SendPort, чтобы получать команды.
+  mainSendPort.send(commandPort.sendPort);
+  commandPort.listen((message) {
+    if (message is TimerCommand) {
+      if (message == TimerCommand.start && !running) {
+        running = true;
+        timer = Timer.periodic(const Duration(milliseconds: 10), (_) {
+          time += 10;
+          mainSendPort.send(time);
+        });
+      } else if (message == TimerCommand.pause && running) {
+        running = false;
+        timer?.cancel();
+      } else if (message == TimerCommand.reset) {
+        running = false;
+        timer?.cancel();
+        time = 0;
+        mainSendPort.send(time);
+      }
+    }
+  });
+}
+
+/// Страница настроек.
 class SettingsPage extends StatefulWidget {
   final TimerPageState state;
   const SettingsPage({Key? key, required this.state}) : super(key: key);
