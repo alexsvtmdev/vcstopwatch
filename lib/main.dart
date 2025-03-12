@@ -23,7 +23,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// TimerPage – главная страница с таймером, голосовым управлением и индикатором распознавания.
+/// TimerPage – главная страница с таймером, голосовым управлением и индикатором состояния голосового распознавания.
 class TimerPage extends StatefulWidget {
   const TimerPage({super.key});
   @override
@@ -47,10 +47,12 @@ class TimerPageState extends State<TimerPage> {
   void initState() {
     super.initState();
     _loadVoiceRecognitionSetting();
+    // Таймер обновляет время каждую 10 мс.
     timer = Timer.periodic(const Duration(milliseconds: 10), (Timer t) {
       _handleTick();
     });
     flutterTts.setVolume(volume);
+    debugPrint("TTS initialized with volume: $volume");
     if (voiceRecognitionEnabled) {
       _initRhino();
     }
@@ -98,6 +100,7 @@ class TimerPageState extends State<TimerPage> {
             seconds == 0
                 ? "$minutes minute${minutes > 1 ? "s" : ""}"
                 : "${minutes > 0 ? "$minutes minute${minutes > 1 ? "s" : ""} and " : ""}$seconds second${seconds != 1 ? "s" : ""}";
+        debugPrint("Announcing time: $announcement");
         flutterTts.speak(announcement);
       }
     }
@@ -111,6 +114,7 @@ class TimerPageState extends State<TimerPage> {
 
   void _startTimer() {
     if (!isActive) {
+      debugPrint("Starting timer...");
       flutterTts.speak("Timer started");
       setState(() {
         isActive = true;
@@ -122,6 +126,7 @@ class TimerPageState extends State<TimerPage> {
 
   void _pauseTimer() {
     if (isActive) {
+      debugPrint("Pausing timer at ${_formattedTime()}");
       flutterTts.speak("Timer paused at ${_formattedTime()}");
       setState(() {
         isActive = false;
@@ -132,6 +137,7 @@ class TimerPageState extends State<TimerPage> {
   }
 
   void _resetTimer() {
+    debugPrint("Resetting timer...");
     flutterTts.speak("Timer reset");
     setState(() {
       isActive = false;
@@ -146,22 +152,23 @@ class TimerPageState extends State<TimerPage> {
       // Замените эту строку на ваш реальный access key.
       final String accessKey =
           "P780lAn7uY/24n6Ns7KDEiMu/FguauqQWLSwG99l2P8c0N3Ymtmlig==";
-      // Путь к контекстному файлу из ассетов.
+      // Путь к контекстному файлу (добавленному в ассеты).
       final String contextAsset =
           "assets/picovoice/voice_control_timer_en_android_v3_0_0.rhn";
       debugPrint("AccessKey: $accessKey");
       debugPrint("ContextAsset: $contextAsset");
-      // Передаём три позиционных аргумента: accessKey, contextAsset и _inferenceCallback.
+      // Три позиционных аргумента: accessKey, contextAsset, _inferenceCallback.
       _rhinoManager = await RhinoManager.create(
         accessKey,
         contextAsset,
         _inferenceCallback,
       );
-      // Запускаем аудиозахват и инференс.
+      debugPrint("RhinoManager created successfully");
+      // Запускаем процесс аудиозахвата и инференса один раз.
       await _rhinoManager!.process();
-      debugPrint("RhinoManager processing started successfully");
+      debugPrint("RhinoManager process started successfully");
     } on RhinoException catch (err) {
-      debugPrint("RhinoException: ${err.toString()}");
+      debugPrint("RhinoException during initialization: ${err.toString()}");
       setState(() {
         _rhinoManager = null;
       });
@@ -170,6 +177,7 @@ class TimerPageState extends State<TimerPage> {
 
   /// Callback, вызываемый при получении inference.
   void _inferenceCallback(RhinoInference inference) {
+    debugPrint("Inference callback received: $inference");
     if (inference.isUnderstood == true) {
       String intent = inference.intent ?? "unknown";
       debugPrint("Recognized intent: $intent");
@@ -187,21 +195,10 @@ class TimerPageState extends State<TimerPage> {
         default:
           debugPrint("Unknown command: $intent");
       }
-      _restartRhino();
     } else {
       debugPrint("Command not understood");
-      _restartRhino();
     }
-  }
-
-  /// Перезапускает процесс аудиозахвата для непрерывного прослушивания.
-  Future<void> _restartRhino() async {
-    try {
-      await _rhinoManager?.process();
-      debugPrint("RhinoManager process restarted successfully");
-    } on RhinoException catch (err) {
-      debugPrint("Failed to restart RhinoManager process: ${err.toString()}");
-    }
+    // Не перезапускаем процесс каждый раз – оставляем его запуск только один раз в _initRhino().
   }
 
   @override
@@ -218,12 +215,6 @@ class TimerPageState extends State<TimerPage> {
       appBar: AppBar(
         title: const Text("VoiceControl Timer"),
         actions: [
-          // Отображает состояние голосового распознавания: зелёный, если _rhinoManager != null, иначе красный.
-          Icon(
-            voiceRecognitionEnabled && _rhinoManager != null
-                ? Icons.mic
-                : Icons.mic_off,
-          ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {
@@ -241,6 +232,18 @@ class TimerPageState extends State<TimerPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
+            // Иконка состояния голосового распознавания над таймером.
+            Icon(
+              voiceRecognitionEnabled && _rhinoManager != null
+                  ? Icons.mic
+                  : Icons.mic_off,
+              size: 40,
+              color:
+                  voiceRecognitionEnabled && _rhinoManager != null
+                      ? Colors.green
+                      : Colors.red,
+            ),
+            const SizedBox(height: 10),
             Text(
               formattedTime,
               style: const TextStyle(fontSize: 60, color: Colors.white),
@@ -292,6 +295,7 @@ class TimerPageState extends State<TimerPage> {
 }
 
 /// Страница настроек для регулировки громкости, интервала оповещений и включения/выключения голосового распознавания.
+/// Значение переключателя сохраняется в SharedPreferences.
 class SettingsPage extends StatefulWidget {
   final TimerPageState state;
   const SettingsPage({Key? key, required this.state}) : super(key: key);
