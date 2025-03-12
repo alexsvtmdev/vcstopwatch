@@ -1,14 +1,16 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:picovoice_flutter/picovoice.dart'; // Используем класс Picovoice, как в документации
+import 'package:rhino_flutter/rhino_manager.dart';
+import 'package:rhino_flutter/rhino_error.dart';
+import 'package:rhino_flutter/rhino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const MyApp());
 }
 
-/// Основное приложение.
+/// MyApp – корневой виджет приложения.
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
   @override
@@ -21,7 +23,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// Главная страница с таймером, голосовым управлением и отображением состояния распознавания.
+/// TimerPage – главная страница с таймером, голосовым управлением и индикатором распознавания.
 class TimerPage extends StatefulWidget {
   const TimerPage({super.key});
   @override
@@ -38,21 +40,19 @@ class TimerPageState extends State<TimerPage> {
 
   // Голосовое распознавание включено по умолчанию.
   bool voiceRecognitionEnabled = true;
-  // Приватная переменная для экземпляра Picovoice.
-  Picovoice? _picovoice;
+  // Приватная переменная для хранения экземпляра RhinoManager.
+  RhinoManager? _rhinoManager;
 
   @override
   void initState() {
     super.initState();
     _loadVoiceRecognitionSetting();
-    // Запускаем таймер, который обновляет время каждые 10 мс.
     timer = Timer.periodic(const Duration(milliseconds: 10), (Timer t) {
-      handleTick();
+      _handleTick();
     });
     flutterTts.setVolume(volume);
-    // Если распознавание включено, инициализируем его.
     if (voiceRecognitionEnabled) {
-      _initPicovoice();
+      _initRhino();
     }
   }
 
@@ -75,18 +75,17 @@ class TimerPageState extends State<TimerPage> {
     });
     debugPrint("Voice recognition setting updated: $enabled");
     if (enabled) {
-      _initPicovoice();
+      _initRhino();
     } else {
-      // Если выключаем распознавание, освобождаем ресурсы.
-      await _picovoice?.delete();
+      await _rhinoManager?.delete();
       setState(() {
-        _picovoice = null;
+        _rhinoManager = null;
       });
-      debugPrint("Picovoice deleted, voice recognition disabled");
+      debugPrint("RhinoManager deleted, voice recognition disabled");
     }
   }
 
-  void handleTick() {
+  void _handleTick() {
     if (isActive) {
       setState(() {
         timeMilliseconds += 10;
@@ -94,7 +93,6 @@ class TimerPageState extends State<TimerPage> {
       int totalSeconds = timeMilliseconds ~/ 1000;
       int minutes = totalSeconds ~/ 60;
       int seconds = totalSeconds % 60;
-      // Каждые intervalSeconds секунд произносится время.
       if (totalSeconds > 0 && totalSeconds % intervalSeconds == 0) {
         String announcement =
             seconds == 0
@@ -141,41 +139,39 @@ class TimerPageState extends State<TimerPage> {
     });
   }
 
-  /// Инициализирует Picovoice в режиме inference-only (без wake word).
-  Future<void> _initPicovoice() async {
+  /// Инициализирует RhinoManager в режиме inference-only (без wake word).
+  Future<void> _initRhino() async {
     try {
-      debugPrint("Initializing Picovoice (inference-only mode)...");
-      // Замените на ваш реальный access key.
+      debugPrint("Initializing RhinoManager (inference-only mode)...");
+      // Замените эту строку на ваш реальный access key.
       final String accessKey =
           "P780lAn7uY/24n6Ns7KDEiMu/FguauqQWLSwG99l2P8c0N3Ymtmlig==";
-      // Пути к ассетам, как они указаны в pubspec.yaml.
-      final String keywordAsset =
-          ""; // В режиме inference-only не используется.
+      // Путь к контекстному файлу из ассетов.
       final String contextAsset =
           "assets/picovoice/voice_control_timer_en_android_v3_0_0.rhn";
       debugPrint("AccessKey: $accessKey");
       debugPrint("ContextAsset: $contextAsset");
-      _picovoice = await Picovoice.create(
+      // Передаём три позиционных аргумента: accessKey, contextAsset и _inferenceCallback.
+      _rhinoManager = await RhinoManager.create(
         accessKey,
-        keywordAsset,
-        () {}, // Пустой callback для wake word.
         contextAsset,
         _inferenceCallback,
       );
-      debugPrint("Picovoice (inference-only) created successfully");
-    } catch (e) {
-      debugPrint("Failed to initialize Picovoice: ${e.toString()}");
+      // Запускаем аудиозахват и инференс.
+      await _rhinoManager!.process();
+      debugPrint("RhinoManager processing started successfully");
+    } on RhinoException catch (err) {
+      debugPrint("RhinoException: ${err.toString()}");
       setState(() {
-        _picovoice = null;
+        _rhinoManager = null;
       });
     }
   }
 
   /// Callback, вызываемый при получении inference.
-  void _inferenceCallback(dynamic inference) {
-    debugPrint("Inference callback: $inference");
-    if (inference != null && inference['isUnderstood'] == true) {
-      String intent = inference['intent'] ?? "unknown";
+  void _inferenceCallback(RhinoInference inference) {
+    if (inference.isUnderstood == true) {
+      String intent = inference.intent ?? "unknown";
       debugPrint("Recognized intent: $intent");
       flutterTts.speak("Command: $intent");
       switch (intent.toLowerCase()) {
@@ -191,16 +187,27 @@ class TimerPageState extends State<TimerPage> {
         default:
           debugPrint("Unknown command: $intent");
       }
+      _restartRhino();
     } else {
       debugPrint("Command not understood");
+      _restartRhino();
+    }
+  }
+
+  /// Перезапускает процесс аудиозахвата для непрерывного прослушивания.
+  Future<void> _restartRhino() async {
+    try {
+      await _rhinoManager?.process();
+      debugPrint("RhinoManager process restarted successfully");
+    } on RhinoException catch (err) {
+      debugPrint("Failed to restart RhinoManager process: ${err.toString()}");
     }
   }
 
   @override
   void dispose() {
-    // Освобождаем ресурсы Picovoice.
-    _picovoice?.delete();
     timer?.cancel();
+    _rhinoManager?.delete();
     super.dispose();
   }
 
@@ -211,9 +218,9 @@ class TimerPageState extends State<TimerPage> {
       appBar: AppBar(
         title: const Text("VoiceControl Timer"),
         actions: [
-          // Пиктограмма, показывающая состояние голосового распознавания.
+          // Отображает состояние голосового распознавания: зелёный, если _rhinoManager != null, иначе красный.
           Icon(
-            voiceRecognitionEnabled && _picovoice != null
+            voiceRecognitionEnabled && _rhinoManager != null
                 ? Icons.mic
                 : Icons.mic_off,
           ),
@@ -284,15 +291,15 @@ class TimerPageState extends State<TimerPage> {
   }
 }
 
-/// Страница настроек, где можно регулировать громкость, интервал оповещений и включать/выключать голосовое распознавание.
+/// Страница настроек для регулировки громкости, интервала оповещений и включения/выключения голосового распознавания.
 class SettingsPage extends StatefulWidget {
   final TimerPageState state;
   const SettingsPage({Key? key, required this.state}) : super(key: key);
   @override
-  _SettingsPageState createState() => _SettingsPageState();
+  SettingsPageState createState() => SettingsPageState();
 }
 
-class _SettingsPageState extends State<SettingsPage> {
+class SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
