@@ -1,9 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:rhino_flutter/rhino_manager.dart';
 import 'package:rhino_flutter/rhino_error.dart';
-import 'package:rhino_flutter/rhino.dart';
+import 'package:rhino_flutter/rhino.dart'; // Для класса RhinoInference
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -23,7 +24,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// TimerPage – главная страница с таймером, голосовым управлением и индикатором состояния голосового распознавания.
+/// TimerPage – главная страница с таймером, голосовым управлением и индикатором состояния распознавания.
 class TimerPage extends StatefulWidget {
   const TimerPage({super.key});
   @override
@@ -47,7 +48,7 @@ class TimerPageState extends State<TimerPage> {
   void initState() {
     super.initState();
     _loadVoiceRecognitionSetting();
-    // Таймер обновляет время каждую 10 мс.
+    // Таймер, обновляющий время каждые 10 мс.
     timer = Timer.periodic(const Duration(milliseconds: 10), (Timer t) {
       _handleTick();
     });
@@ -145,6 +146,31 @@ class TimerPageState extends State<TimerPage> {
     });
   }
 
+  /// Функция для проверки наличия файлов по заданным путям.
+  Future<void> _checkFiles() async {
+    // Здесь мы используем абсолютные пути, как в логах (обратите внимание, что эти пути могут отличаться на разных устройствах).
+    const String modelPath =
+        "/data/user/0/com.example.voice_control_timer/files/rhino_params.pv";
+    const String contextPath =
+        "/data/user/0/com.example.voice_control_timer/app_flutter/assets/picovoice/voice_control_timer_en_android_v3_0_0.rhn";
+    try {
+      final modelFile = File(modelPath);
+      final contextFile = File(contextPath);
+      bool modelExists = await modelFile.exists();
+      bool contextExists = await contextFile.exists();
+      int? modelSize = modelExists ? await modelFile.length() : null;
+      int? contextSize = contextExists ? await contextFile.length() : null;
+      debugPrint(
+        "Rhino model path: exists=$modelExists, size=${modelSize ?? 'N/A'} bytes, path: $modelPath",
+      );
+      debugPrint(
+        "Rhino context path: exists=$contextExists, size=${contextSize ?? 'N/A'} bytes, path: $contextPath",
+      );
+    } catch (e) {
+      debugPrint("Error checking files: ${e.toString()}");
+    }
+  }
+
   /// Инициализирует RhinoManager в режиме inference-only (без wake word).
   Future<void> _initRhino() async {
     try {
@@ -152,21 +178,22 @@ class TimerPageState extends State<TimerPage> {
       // Замените эту строку на ваш реальный access key.
       final String accessKey =
           "P780lAn7uY/24n6Ns7KDEiMu/FguauqQWLSwG99l2P8c0N3Ymtmlig==";
-      // Путь к контекстному файлу (добавленному в ассеты).
+      // Путь к контекстному файлу (должен быть добавлен в ассетах).
       final String contextAsset =
           "assets/picovoice/voice_control_timer_en_android_v3_0_0.rhn";
       debugPrint("AccessKey: $accessKey");
       debugPrint("ContextAsset: $contextAsset");
-      // Три позиционных аргумента: accessKey, contextAsset, _inferenceCallback.
+      // Передаем три позиционных аргумента: accessKey, contextAsset, _inferenceCallback.
       _rhinoManager = await RhinoManager.create(
         accessKey,
         contextAsset,
         _inferenceCallback,
       );
       debugPrint("RhinoManager created successfully");
-      // Запускаем процесс аудиозахвата и инференса один раз.
       await _rhinoManager!.process();
       debugPrint("RhinoManager process started successfully");
+      // Проверяем файлы модели и контекста.
+      await _checkFiles();
     } on RhinoException catch (err) {
       debugPrint("RhinoException during initialization: ${err.toString()}");
       setState(() {
@@ -198,7 +225,7 @@ class TimerPageState extends State<TimerPage> {
     } else {
       debugPrint("Command not understood");
     }
-    // Не перезапускаем процесс каждый раз – оставляем его запуск только один раз в _initRhino().
+    // Здесь не перезапускаем процесс, чтобы не создавать лишние задержки.
   }
 
   @override
@@ -215,6 +242,8 @@ class TimerPageState extends State<TimerPage> {
       appBar: AppBar(
         title: const Text("VoiceControl Timer"),
         actions: [
+          // Теперь вместо иконки в AppBar отображается состояние распознавания над таймером.
+          // Здесь можно оставить только кнопку настроек, а состояние отображать в теле.
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {
@@ -232,7 +261,7 @@ class TimerPageState extends State<TimerPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            // Иконка состояния голосового распознавания над таймером.
+            // Отображаем иконку состояния голосового распознавания над таймером.
             Icon(
               voiceRecognitionEnabled && _rhinoManager != null
                   ? Icons.mic
@@ -295,7 +324,7 @@ class TimerPageState extends State<TimerPage> {
 }
 
 /// Страница настроек для регулировки громкости, интервала оповещений и включения/выключения голосового распознавания.
-/// Значение переключателя сохраняется в SharedPreferences.
+/// Значение сохраняется в SharedPreferences.
 class SettingsPage extends StatefulWidget {
   final TimerPageState state;
   const SettingsPage({Key? key, required this.state}) : super(key: key);
