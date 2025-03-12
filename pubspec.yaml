@@ -23,3 +23,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/picovoice/voice_control_timer_en_android_v3_0_0.rhn
+    - assets/picovoice/Ok-Timer_en_android_v3_0_0.ppn
+    - assets/picovoice/porcupine_params.pv

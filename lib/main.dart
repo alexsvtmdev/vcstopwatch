@@ -39,6 +39,7 @@ class TimerPageState extends State<TimerPage> {
   // Голосовое распознавание включено по умолчанию.
   bool voiceRecognitionEnabled = true;
   PicovoiceManager? _picovoiceManager;
+  bool isInitializingRhino = false;
 
   @override
   void initState() {
@@ -50,11 +51,15 @@ class TimerPageState extends State<TimerPage> {
       (_) => _handleTick(),
     );
     flutterTts.setVolume(volume);
-    if (voiceRecognitionEnabled) {
-      _initRhino();
-    } else {
-      debugPrint("Voice recognition отключено по настройкам");
-    }
+    // Отложенная инициализация Rhino через 1 секунду.
+    Future.delayed(const Duration(seconds: 1), () {
+      if (voiceRecognitionEnabled) {
+        _initRhino();
+      } else {
+        debugPrint("Voice recognition отключено по настройкам");
+      }
+      _debugCheckFiles();
+    });
   }
 
   Future<void> _loadVoiceRecognitionSetting() async {
@@ -87,54 +92,123 @@ class TimerPageState extends State<TimerPage> {
     }
   }
 
-  /// Загружает файл ассета и сохраняет его во временной директории,
-  /// возвращая абсолютный путь к файлу.
+  /// Копирует файл ассета во временную директорию и возвращает абсолютный путь.
   Future<String> _loadAssetToFile(String assetPath, String fileName) async {
     final byteData = await rootBundle.load(assetPath);
     final tempDir = await getTemporaryDirectory();
     final file = File('${tempDir.path}/$fileName');
     await file.writeAsBytes(byteData.buffer.asUint8List(), flush: true);
+    debugPrint("Файл '$fileName' сохранён: ${file.path}");
+    return file.path;
+  }
+
+  /// Отладочная функция: проверяет наличие файлов и их размеры.
+  Future<void> _debugCheckFiles() async {
+    try {
+      String contextPath = await _loadAssetToFile(
+        "assets/picovoice/voice_control_timer_en_android_v3_0_0.rhn",
+        "voice_control_timer_en_android_v3_0_0.rhn",
+      );
+      String keywordPath = await _loadAssetToFile(
+        "assets/picovoice/Ok-Timer_en_android_v3_0_0.ppn",
+        "Ok-Timer_en_android_v3_0_0.ppn",
+      );
+      String porcupinePath = await _loadAssetToFile(
+        "assets/picovoice/porcupine_params.pv",
+        "porcupine_params.pv",
+      );
+
+      File contextFile = File(contextPath);
+      bool contextExists = await contextFile.exists();
+      int contextSize = contextExists ? await contextFile.length() : 0;
+      debugPrint(
+        "Контекстный файл: существует=$contextExists, размер=$contextSize байт",
+      );
+
+      File keywordFile = File(keywordPath);
+      bool keywordExists = await keywordFile.exists();
+      int keywordSize = keywordExists ? await keywordFile.length() : 0;
+      debugPrint(
+        "Файл ключевого слова: существует=$keywordExists, размер=$keywordSize байт",
+      );
+
+      File porcupineFile = File(porcupinePath);
+      bool porcupineExists = await porcupineFile.exists();
+      int porcupineSize = porcupineExists ? await porcupineFile.length() : 0;
+      debugPrint(
+        "Файл porcupine_params.pv: существует=$porcupineExists, размер=$porcupineSize байт",
+      );
+    } catch (e) {
+      debugPrint("Ошибка проверки файлов: $e");
+    }
+  }
+
+  /// Копирует модель porcupine из ассетов в директорию файлов приложения.
+  Future<String> _copyPorcupineModel() async {
+    final byteData = await rootBundle.load(
+      "assets/picovoice/porcupine_params.pv",
+    );
+    final appDir = await getApplicationDocumentsDirectory();
+    final file = File('${appDir.path}/porcupine_params.pv');
+    await file.writeAsBytes(byteData.buffer.asUint8List(), flush: true);
+    debugPrint("Файл porcupine_params.pv скопирован: ${file.path}");
     return file.path;
   }
 
   Future<void> _initRhino() async {
+    if (isInitializingRhino) return;
+    setState(() {
+      isInitializingRhino = true;
+    });
     try {
-      debugPrint("Initializing Rhino...");
-      // Замените на ваш реальный access key.
+      debugPrint("Initializing Rhino с wake word...");
+      // Замените на ваш действительный access key.
       String accessKey =
-          "P780lAn7uY/24n6Ns7KDEiMu/FguauqQWLSwG99l2P8c0N3Ymtmlig==";
+          "P780lAn7uY/24n6Ns7KDEiMu/FguauqWLSwG99l2P8c0N3Ymtmlig==";
       String assetContextPath =
           "assets/picovoice/voice_control_timer_en_android_v3_0_0.rhn";
-      // Копируем файл ассета во временную директорию.
+      String assetKeywordPath =
+          "assets/picovoice/Ok-Timer_en_android_v3_0_0.ppn";
+
       String contextPath = await _loadAssetToFile(
         assetContextPath,
         "voice_control_timer_en_android_v3_0_0.rhn",
       );
-      // Проверяем, существует ли файл и его размер.
-      final file = File(contextPath);
-      bool exists = await file.exists();
-      int size = exists ? await file.length() : 0;
-      debugPrint("Файл контекста существует: $exists, размер: $size байт");
+      String keywordPath = await _loadAssetToFile(
+        assetKeywordPath,
+        "Ok-Timer_en_android_v3_0_0.ppn",
+      );
+      await _copyPorcupineModel(); // Копируем модель porcupine_params.pv в файловую систему
 
       debugPrint("AccessKey: $accessKey");
       debugPrint("ContextPath (temp): $contextPath");
-      // Вызываем PicovoiceManager.create с 5 позиционными аргументами для inference-only режима.
+      debugPrint("KeywordPath (temp): $keywordPath");
+
       _picovoiceManager = await PicovoiceManager.create(
         accessKey,
-        "", // keywordPath (не используется)
-        () {}, // wakeWordCallback (не используется)
-        contextPath,
-        _inferenceCallback,
+        keywordPath, // Файл ключевого слова
+        _wakeWordCallback, // Callback для wake word
+        contextPath, // Файл контекста
+        _inferenceCallback, // Callback для inference
       );
       await _picovoiceManager!.start();
-      debugPrint("Rhino started successfully");
+      debugPrint("Rhino with wake word started successfully");
       setState(() {});
     } catch (e) {
-      debugPrint("Failed to initialize Rhino: $e");
+      debugPrint("Failed to initialize Rhino: ${e.toString()}");
       setState(() {
         _picovoiceManager = null;
       });
+    } finally {
+      setState(() {
+        isInitializingRhino = false;
+      });
     }
+  }
+
+  void _wakeWordCallback() {
+    debugPrint("Wake word detected!");
+    flutterTts.speak("Wake word detected");
   }
 
   void _inferenceCallback(dynamic inference) {
@@ -243,7 +317,6 @@ class TimerPageState extends State<TimerPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Если _picovoiceManager != null, значит распознавание запущено (иконка зелёная).
             if (voiceRecognitionEnabled && _picovoiceManager != null)
               const Icon(Icons.mic, color: Colors.green, size: 40)
             else
@@ -254,6 +327,14 @@ class TimerPageState extends State<TimerPage> {
               style: const TextStyle(fontSize: 60, color: Colors.white),
             ),
             const SizedBox(height: 40),
+            ElevatedButton(
+              onPressed: _initRhino,
+              child:
+                  isInitializingRhino
+                      ? const CircularProgressIndicator()
+                      : const Text("Init Rhino"),
+            ),
+            const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
@@ -338,7 +419,7 @@ class _SettingsPageState extends State<SettingsPage> {
             value: widget.state.voiceRecognitionEnabled,
             onChanged: (value) {
               widget.state._updateVoiceRecognitionSetting(value);
-              setState(() {}); // Обновляем UI
+              setState(() {});
             },
           ),
         ],
