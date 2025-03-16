@@ -10,7 +10,6 @@ void main() {
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -23,7 +22,6 @@ class MyApp extends StatelessWidget {
 
 class TimerPage extends StatefulWidget {
   const TimerPage({super.key});
-
   @override
   TimerPageState createState() => TimerPageState();
 }
@@ -34,7 +32,7 @@ class TimerPageState extends State<TimerPage> {
   int timeMilliseconds = 0;
   bool isActive = false;
   double volume = 1.0; // Максимальная громкость по умолчанию
-  int intervalSeconds = 30; // Интервал произношения по умолчанию: 30 секунд
+  int intervalSeconds = 30; // Интервал оповещений по умолчанию: 30 секунд
   bool voiceControlEnabled = true; // Голосовое управление включено по умолчанию
 
   // Распознавание речи
@@ -55,7 +53,8 @@ class TimerPageState extends State<TimerPage> {
 
   Future<void> _initSpeech() async {
     _speech = stt.SpeechToText();
-    await _speech.initialize();
+    bool available = await _speech.initialize();
+    debugPrint("SpeechToText initialization: available = $available");
   }
 
   Future<void> _loadSettings() async {
@@ -66,6 +65,9 @@ class TimerPageState extends State<TimerPage> {
       voiceControlEnabled = prefs.getBool('voiceControlEnabled') ?? true;
     });
     flutterTts.setVolume(volume);
+    debugPrint(
+      "Settings loaded: volume=$volume, intervalSeconds=$intervalSeconds, voiceControlEnabled=$voiceControlEnabled",
+    );
   }
 
   Future<void> _saveSettings() async {
@@ -73,6 +75,7 @@ class TimerPageState extends State<TimerPage> {
     await prefs.setDouble('volume', volume);
     await prefs.setInt('intervalSeconds', intervalSeconds);
     await prefs.setBool('voiceControlEnabled', voiceControlEnabled);
+    debugPrint("Settings saved");
   }
 
   void handleTick() {
@@ -84,21 +87,23 @@ class TimerPageState extends State<TimerPage> {
       int minutes = totalSeconds ~/ 60;
       int seconds = totalSeconds % 60;
       if (totalSeconds > 0 && totalSeconds % intervalSeconds == 0) {
-        String timeAnnouncement;
-        if (seconds == 0) {
-          timeAnnouncement = "$minutes minute${minutes != 1 ? "s" : ""}";
-        } else {
-          timeAnnouncement =
-              "${minutes > 0 ? "$minutes minute${minutes != 1 ? "s" : ""} and " : ""}$seconds second${seconds != 1 ? "s" : ""}";
-        }
+        String timeAnnouncement =
+            seconds == 0
+                ? "$minutes minute${minutes != 1 ? "s" : ""}"
+                : "${minutes > 0 ? "$minutes minute${minutes != 1 ? "s" : ""} and " : ""}$seconds second${seconds != 1 ? "s" : ""}";
+        debugPrint("Timer announcement: $timeAnnouncement");
         flutterTts.speak(timeAnnouncement);
       }
     }
   }
 
   void _toggleListening() async {
-    if (!voiceControlEnabled) return;
+    if (!voiceControlEnabled) {
+      debugPrint("Voice control is disabled.");
+      return;
+    }
     if (!_isListening) {
+      debugPrint("Starting speech recognition...");
       bool available = await _speech.initialize();
       if (available) {
         setState(() {
@@ -106,8 +111,10 @@ class TimerPageState extends State<TimerPage> {
         });
         _speech.listen(
           onResult: (result) {
+            debugPrint("Speech result: ${result.recognizedWords}");
             String recognized = result.recognizedWords.toLowerCase();
             if (recognized.contains("start")) {
+              debugPrint("Command 'start' recognized.");
               if (!isActive) {
                 flutterTts.speak("Timer started");
                 setState(() {
@@ -115,6 +122,7 @@ class TimerPageState extends State<TimerPage> {
                 });
               }
             } else if (recognized.contains("stop")) {
+              debugPrint("Command 'stop' recognized.");
               if (isActive) {
                 int totalSeconds = timeMilliseconds ~/ 1000;
                 int displayMinutes = totalSeconds ~/ 60;
@@ -127,22 +135,30 @@ class TimerPageState extends State<TimerPage> {
                 });
               }
             } else if (recognized.contains("reset")) {
+              debugPrint("Command 'reset' recognized.");
               setState(() {
                 isActive = false;
                 timeMilliseconds = 0;
               });
               flutterTts.speak("Timer reset");
+            } else {
+              debugPrint("No valid command found in: $recognized");
             }
             _speech.stop();
+            debugPrint("Speech recognition stopped after processing.");
             setState(() {
               _isListening = false;
             });
           },
           localeId: "en_US",
         );
+        debugPrint("Speech recognition started.");
+      } else {
+        debugPrint("Speech recognition not available.");
       }
     } else {
       _speech.stop();
+      debugPrint("Speech recognition manually stopped.");
       setState(() {
         _isListening = false;
       });
@@ -162,7 +178,6 @@ class TimerPageState extends State<TimerPage> {
     int displayMinutes = (timeMilliseconds / (1000 * 60)).floor();
     String formattedTime =
         "${displayMinutes.toString().padLeft(2, '0')}:${displaySeconds.toStringAsFixed(2).padLeft(5, '0')}";
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('VoiceControl Timer'),
@@ -184,6 +199,22 @@ class TimerPageState extends State<TimerPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
+            // Отображаем иконку состояния голосового распознавания над таймером.
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  _isListening ? Icons.mic : Icons.mic_none,
+                  size: 40,
+                  color: _isListening ? Colors.green : Colors.red,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  _isListening ? "Listening..." : "Not listening",
+                  style: const TextStyle(fontSize: 18, color: Colors.white),
+                ),
+              ],
+            ),
             Text(
               formattedTime,
               style: const TextStyle(fontSize: 80, color: Colors.white),
@@ -204,6 +235,7 @@ class TimerPageState extends State<TimerPage> {
                       timeMilliseconds = 0;
                     });
                     flutterTts.speak('Timer reset');
+                    debugPrint("Timer reset command executed.");
                   },
                   child: const Text('Reset'),
                 ),
@@ -217,6 +249,7 @@ class TimerPageState extends State<TimerPage> {
                   onPressed: () {
                     if (!isActive) {
                       flutterTts.speak('Timer started');
+                      debugPrint("Timer started command executed.");
                       setState(() {
                         isActive = true;
                       });
@@ -227,6 +260,9 @@ class TimerPageState extends State<TimerPage> {
                       String announcement =
                           "Timer stopped at $displayMinutes minute${displayMinutes != 1 ? "s" : ""} and $displaySeconds second${displaySeconds != 1 ? "s" : ""}";
                       flutterTts.speak(announcement);
+                      debugPrint(
+                        "Timer stopped command executed: $announcement",
+                      );
                       setState(() {
                         isActive = false;
                       });
@@ -236,16 +272,14 @@ class TimerPageState extends State<TimerPage> {
                 ),
               ],
             ),
+            // Кнопка для управления голосовым распознаванием.
+            FloatingActionButton(
+              onPressed: _toggleListening,
+              child: Icon(_isListening ? Icons.mic : Icons.mic_none),
+            ),
           ],
         ),
       ),
-      floatingActionButton:
-          voiceControlEnabled
-              ? FloatingActionButton(
-                onPressed: _toggleListening,
-                child: Icon(_isListening ? Icons.mic : Icons.mic_none),
-              )
-              : null,
     );
   }
 }
@@ -253,7 +287,6 @@ class TimerPageState extends State<TimerPage> {
 class SettingsPage extends StatefulWidget {
   final TimerPageState state;
   const SettingsPage({super.key, required this.state});
-
   @override
   SettingsPageState createState() => SettingsPageState();
 }
@@ -262,14 +295,11 @@ class SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Используем PreferredSize и Padding для смещения AppBar вниз
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(kToolbarHeight + 20),
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.only(
-              top: 20,
-            ), // дополнительный отступ сверху
+            padding: const EdgeInsets.only(top: 20),
             child: AppBar(
               title: const Text("Settings"),
               leading: Padding(
@@ -311,6 +341,7 @@ class SettingsPageState extends State<SettingsPage> {
                     widget.state.flutterTts.setVolume(value);
                     widget.state._saveSettings();
                   });
+                  debugPrint("Volume changed to: $value");
                 },
               ),
             ),
@@ -330,6 +361,7 @@ class SettingsPageState extends State<SettingsPage> {
                       widget.state.intervalSeconds = newValue;
                       widget.state._saveSettings();
                     });
+                    debugPrint("Speech interval changed to: $newValue seconds");
                   }
                 },
               ),
@@ -342,6 +374,7 @@ class SettingsPageState extends State<SettingsPage> {
                   widget.state.voiceControlEnabled = value;
                   widget.state._saveSettings();
                 });
+                debugPrint("Voice control setting changed to: $value");
               },
             ),
           ],
