@@ -29,19 +29,49 @@ class VoiceCommandService {
     const modelName = 'vosk-model-small-en-us-0.15';
     const sampleRate = 16000;
     try {
+      developer.log("Loading model list...", name: "VoiceCommandService");
       final modelsList = await _modelLoader.loadModelsList();
       final modelDescription = modelsList.firstWhere(
         (m) => m.name == modelName,
       );
-      // Здесь можно заменить загрузку по сети на локальную модель (если модель лежит в assets)
+      developer.log(
+        "Loading model from: ${modelDescription.url}",
+        name: "VoiceCommandService",
+      );
+      // Здесь можно заменить загрузку по сети на локальную модель (если лежит в assets)
       final modelPath = await _modelLoader.loadFromNetwork(
         modelDescription.url,
       );
       model = await _vosk.createModel(modelPath);
+      developer.log("Model successfully created.", name: "VoiceCommandService");
+
       recognizer = await _vosk.createRecognizer(
         model: model!,
         sampleRate: sampleRate,
       );
+      developer.log(
+        "Recognizer successfully created.",
+        name: "VoiceCommandService",
+      );
+
+      // Устанавливаем грамматику для распознавания только нужных слов.
+      List<String> grammarList = [
+        "start",
+        "begin",
+        "stop",
+        "pause",
+        "reset",
+        "clear",
+        "restart",
+        "renew",
+      ];
+      // Если метод setGrammar доступен:
+      await recognizer!.setGrammar(grammarList);
+      developer.log(
+        "Grammar set to: $grammarList",
+        name: "VoiceCommandService",
+      );
+
       if (Platform.isAndroid) {
         speechService = await _vosk.initSpeechService(recognizer!);
         speechService!.onResult().listen((result) {
@@ -70,8 +100,7 @@ class VoiceCommandService {
           recognized = "-";
         }
         bool isCommand = false;
-        // Для команды "start": учитываем "start" и "begin"
-        // Для команды "stop": учитываем "stop" и "pause"
+        // Если распознаны ключевые слова (включая синонимы), считаем результат командой.
         if (recognized.contains("start") ||
             recognized.contains("begin") ||
             recognized.contains("stop") ||
@@ -149,7 +178,7 @@ class TimerPageState extends State<TimerPage> {
   DateTime? _startTime;
   bool isActive = false;
   double volume = 1.0;
-  // Интервал произношения в секундах; 0 - отключено.
+  // Интервал произношения в секундах; 0 означает отключить.
   int intervalSeconds = 30;
   bool voiceControlEnabled = true;
   bool voiceRecognitionActive = false;
@@ -182,6 +211,7 @@ class TimerPageState extends State<TimerPage> {
     // UI таймер: обновляем экран каждые 50 мс и проверяем интервальные объявления.
     _uiTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
       if (isActive && _startTime != null) {
+        setState(() {}); // Просто обновляем UI для показа нового времени.
         Duration currentElapsed = elapsed;
         int totalSeconds = currentElapsed.inSeconds;
         if (intervalSeconds != 0 &&
@@ -196,7 +226,6 @@ class TimerPageState extends State<TimerPage> {
           );
         }
       }
-      setState(() {}); // Обновляем UI
     });
 
     // Инициализируем сервис голосовых команд.
@@ -221,7 +250,8 @@ class TimerPageState extends State<TimerPage> {
         _clearVoiceTextTimer?.cancel();
         _clearVoiceTextTimer = Timer(const Duration(seconds: 3), () {
           setState(() {
-            _displayedVoiceText = " "; // пробел для фиксированной высоты
+            _displayedVoiceText =
+                " "; // пробел для сохранения фиксированной высоты
           });
         });
         if (result.isCommand) {
@@ -407,7 +437,6 @@ class TimerPageState extends State<TimerPage> {
                       flutterTts.speak('Timer started');
                       setState(() {
                         isActive = true;
-                        // При запуске возобновляем отсчёт с накопленного времени.
                         _startTime = DateTime.now();
                       });
                       developer.log("Manual: Timer started", name: "TimerPage");
