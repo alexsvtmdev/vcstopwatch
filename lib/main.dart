@@ -33,10 +33,10 @@ class VoiceCommandService {
     "clear",
     "restart",
     "renew",
+    "resume", // добавлен синоним "resume"
   ];
 
   // Список слов, которые будут распознаны, но не вызовут реакцию.
-  // Здесь можно дополнять новые слова по необходимости.
   static const List<String> ignoreWords = [
     "minute",
     "minutes",
@@ -325,14 +325,20 @@ class TimerPageState extends State<TimerPage> {
 
   void _handleVoiceCommand(String commandText) {
     developer.log("Voice command received: $commandText", name: "TimerPage");
-    if (commandText.contains("start") || commandText.contains("begin")) {
+    if (commandText.contains("start") ||
+        commandText.contains("begin") ||
+        commandText.contains("resume")) {
+      // добавлено условие "resume"
       if (!isActive) {
         flutterTts.speak("Timer started");
         setState(() {
           isActive = true;
           _startTime = DateTime.now();
         });
-        developer.log("Voice command executed: start/begin", name: "TimerPage");
+        developer.log(
+          "Voice command executed: start/begin/resume",
+          name: "TimerPage",
+        );
       }
     } else if (commandText.contains("stop") || commandText.contains("pause")) {
       if (isActive && _startTime != null) {
@@ -502,7 +508,11 @@ class TimerPageState extends State<TimerPage> {
                       developer.log("Manual: Timer stopped", name: "TimerPage");
                     }
                   },
-                  child: Text(isActive ? 'Stop' : 'Start'),
+                  child: Text(
+                    isActive
+                        ? 'Stop'
+                        : (elapsed > Duration.zero ? 'Resume' : 'Start'),
+                  ),
                 ),
               ],
             ),
@@ -629,3 +639,13 @@ class SettingsPageState extends State<SettingsPage> {
     );
   }
 }
+  /*
+  В этом примере мы создали простое приложение таймера с голосовым управлением. Пользователь может запустить, остановить и сбросить таймер с помощью голосовых команд. Также приложение объявляет интервалы времени (например, каждые 30 секунд) с помощью голосового синтеза. 
+  Важно:  Для работы голосового управления необходимо разрешение на использование микрофона. В Android это делается в манифесте, а в iOS – в Info.plist. 
+  В этом примере мы использовали пакет  vosk_flutter_2 для распознавания голоса и  flutter_tts для синтеза речи. 
+  Важно:  Для работы с пакетом vosk_flutter_2 необходимо установить библиотеку Vosk на сервере. 
+  В этом примере мы создали простое приложение таймера с голосовым управлением. Пользователь может запустить, остановить и сбросить таймер с помощью голосовых команд. Также приложение объявляет интервалы времени (например, каждые 30 секунд) с помощью голосового синтеза. 
+  Важно:  Для работы голосового управления необходимо разрешение на использование микрофона. В Android это делается в манифесте, а в iOS – в Info.plist. 
+  В этом примере мы использовали пакет  vosk_flutter_2 для распознавания голоса и  flutter_tts для синтеза речи. 
+  Важно:  Для работы с пакетом vosk_flutter_2 необходимо установить библиотеку Vosk на сервере.
+  */
