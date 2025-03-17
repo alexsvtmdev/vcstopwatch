@@ -65,7 +65,6 @@ class VoiceCommandService {
         "restart",
         "renew",
       ];
-      // Если метод setGrammar доступен:
       await recognizer!.setGrammar(grammarList);
       developer.log(
         "Grammar set to: $grammarList",
@@ -211,19 +210,17 @@ class TimerPageState extends State<TimerPage> {
     // UI таймер: обновляем экран каждые 50 мс и проверяем интервальные объявления.
     _uiTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
       if (isActive && _startTime != null) {
-        setState(() {}); // Просто обновляем UI для показа нового времени.
+        setState(() {}); // Обновляем UI.
         Duration currentElapsed = elapsed;
         int totalSeconds = currentElapsed.inSeconds;
         if (intervalSeconds != 0 &&
             totalSeconds > 0 &&
             totalSeconds % intervalSeconds == 0 &&
             totalSeconds != _lastIntervalAnnounced) {
-          flutterTts.speak(_formatAnnouncement(currentElapsed));
+          String announcement = _formatIntervalAnnouncement(currentElapsed);
+          flutterTts.speak(announcement);
           _lastIntervalAnnounced = totalSeconds;
-          developer.log(
-            "Announced interval: ${_formatAnnouncement(currentElapsed)}",
-            name: "TimerPage",
-          );
+          developer.log("Announced interval: $announcement", name: "TimerPage");
         }
       }
     });
@@ -251,7 +248,7 @@ class TimerPageState extends State<TimerPage> {
         _clearVoiceTextTimer = Timer(const Duration(seconds: 3), () {
           setState(() {
             _displayedVoiceText =
-                " "; // пробел для сохранения фиксированной высоты
+                " "; // Пробел для сохранения фиксированной высоты.
           });
         });
         if (result.isCommand) {
@@ -259,6 +256,22 @@ class TimerPageState extends State<TimerPage> {
         }
       });
     });
+  }
+
+  // Функция для форматирования интервальных объявлений.
+  // Если прошло ровно целое число минут (секунды == 0), возвращает только минуты,
+  // иначе – минуты и секунды.
+  String _formatIntervalAnnouncement(Duration duration) {
+    int totalSeconds = duration.inSeconds;
+    int minutes = totalSeconds ~/ 60;
+    int seconds = totalSeconds % 60;
+    if (minutes > 0 && seconds == 0) {
+      return "$minutes minute${minutes != 1 ? "s" : ""}";
+    } else if (minutes > 0) {
+      return "$minutes minute${minutes != 1 ? "s" : ""} and $seconds second${seconds != 1 ? "s" : ""}";
+    } else {
+      return "$seconds second${seconds != 1 ? "s" : ""}";
+    }
   }
 
   // Форматирование времени для отображения (MM:SS:CS)
