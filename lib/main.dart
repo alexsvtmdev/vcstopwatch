@@ -7,6 +7,18 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vosk_flutter_2/vosk_flutter_2.dart';
 
+/// Класс, представляющий запись круга.
+class LapRecord {
+  final int lapNumber;
+  final Duration lapTime;
+  final Duration overallTime;
+  LapRecord({
+    required this.lapNumber,
+    required this.lapTime,
+    required this.overallTime,
+  });
+}
+
 /// Результат распознавания голоса с флагом, является ли он командой.
 class VoiceCommandResult {
   final String text;
@@ -33,7 +45,9 @@ class VoiceCommandService {
     "clear",
     "restart",
     "renew",
-    "resume", // добавлен синоним "resume"
+    "resume",
+    "lap",
+    "split",
   ];
 
   // Список слов, которые будут распознаны, но не вызовут реакцию.
@@ -78,7 +92,6 @@ class VoiceCommandService {
         "Loading model from: ${modelDescription.url}",
         name: "VoiceCommandService",
       );
-      // Здесь можно заменить загрузку по сети на локальную модель (если лежит в assets)
       final modelPath = await _modelLoader.loadFromNetwork(
         modelDescription.url,
       );
@@ -94,7 +107,6 @@ class VoiceCommandService {
         name: "VoiceCommandService",
       );
 
-      // Устанавливаем грамматику – объединение commandWords и ignoreWords.
       await recognizer!.setGrammar(grammarList);
       developer.log(
         "Grammar set to: $grammarList",
@@ -129,9 +141,7 @@ class VoiceCommandService {
           recognized = "-";
         }
         bool isCommand = false;
-        // Если распознанный текст ровно равен одному из игнорируемых слов – не считается командой.
         if (!ignoreWords.contains(recognized)) {
-          // Если в тексте содержится хотя бы одно слово из commandWords, считаем это командой.
           for (var word in commandWords) {
             if (recognized.contains(word)) {
               isCommand = true;
@@ -200,34 +210,38 @@ class TimerPageState extends State<TimerPage> {
   final FlutterTts flutterTts = FlutterTts();
 
   Timer? _uiTimer;
-  // _accumulated хранит общее время до последнего запуска.
   Duration _accumulated = Duration.zero;
-  // _startTime хранит момент последнего запуска.
   DateTime? _startTime;
+  DateTime? _lapStartTime;
   bool isActive = false;
   double volume = 1.0;
-  // Интервал произношения в секундах; 0 означает отключить.
   int intervalSeconds = 30;
   bool voiceControlEnabled = true;
   bool voiceRecognitionActive = false;
 
-  // Для отображения распознанного текста под иконкой (фиксированное место).
   String? _displayedVoiceText;
   bool _displayedVoiceIsCommand = false;
   Timer? _clearVoiceTextTimer;
 
-  // Для интервальных объявлений.
   int _lastIntervalAnnounced = -1;
+
+  List<LapRecord> _lapRecords = [];
 
   late VoiceCommandService voiceService;
   StreamSubscription<VoiceCommandResult>? _voiceSub;
 
-  /// Геттер, возвращающий общее прошедшее время.
   Duration get elapsed {
     if (isActive && _startTime != null) {
       return _accumulated + DateTime.now().difference(_startTime!);
     }
     return _accumulated;
+  }
+
+  Duration get currentLapElapsed {
+    if (isActive && _lapStartTime != null) {
+      return DateTime.now().difference(_lapStartTime!);
+    }
+    return Duration.zero;
   }
 
   @override
@@ -236,10 +250,9 @@ class TimerPageState extends State<TimerPage> {
     _loadSettings();
     flutterTts.setVolume(volume);
 
-    // UI таймер: обновляем экран каждые 50 мс и проверяем интервальные объявления.
     _uiTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
       if (isActive && _startTime != null) {
-        setState(() {}); // Обновляем UI.
+        setState(() {});
         Duration currentElapsed = elapsed;
         int totalSeconds = currentElapsed.inSeconds;
         if (intervalSeconds != 0 &&
@@ -254,7 +267,6 @@ class TimerPageState extends State<TimerPage> {
       }
     });
 
-    // Инициализируем сервис голосовых команд.
     voiceService = VoiceCommandService();
     voiceService.initialize().then((_) {
       if (voiceControlEnabled) {
@@ -276,8 +288,7 @@ class TimerPageState extends State<TimerPage> {
         _clearVoiceTextTimer?.cancel();
         _clearVoiceTextTimer = Timer(const Duration(seconds: 3), () {
           setState(() {
-            _displayedVoiceText =
-                " "; // Пробел для сохранения фиксированной высоты.
+            _displayedVoiceText = " ";
           });
         });
         if (result.isCommand) {
@@ -287,9 +298,6 @@ class TimerPageState extends State<TimerPage> {
     });
   }
 
-  // Функция для форматирования интервальных объявлений.
-  // Если прошло ровно целое число минут (секунды == 0) и не 0, возвращает только минуты,
-  // иначе – минуты и секунды.
   String _formatIntervalAnnouncement(Duration duration) {
     int totalSeconds = duration.inSeconds;
     int minutes = totalSeconds ~/ 60;
@@ -303,7 +311,6 @@ class TimerPageState extends State<TimerPage> {
     }
   }
 
-  // Форматирование времени для отображения (MM:SS:CS)
   String _formatTime(Duration duration) {
     int minutes = duration.inMinutes;
     int seconds = duration.inSeconds % 60;
@@ -311,8 +318,6 @@ class TimerPageState extends State<TimerPage> {
     return "${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}:${centiseconds.toString().padLeft(2, '0')}";
   }
 
-  // Форматирование для голосового объявления при остановке.
-  // Если прошло больше 1 минуты – объявляются минуты и секунды, иначе – только секунды.
   String _formatAnnouncement(Duration duration) {
     int minutes = duration.inMinutes;
     int seconds = duration.inSeconds % 60;
@@ -320,6 +325,27 @@ class TimerPageState extends State<TimerPage> {
       return "$minutes minute${minutes != 1 ? "s" : ""} and $seconds second${seconds != 1 ? "s" : ""}";
     } else {
       return "$seconds second${seconds != 1 ? "s" : ""}";
+    }
+  }
+
+  void _handleLap() {
+    if (isActive && _lapStartTime != null) {
+      Duration currentLap = DateTime.now().difference(_lapStartTime!);
+      Duration overall = elapsed;
+      int lapNumber = _lapRecords.length + 1;
+      LapRecord lapRecord = LapRecord(
+        lapNumber: lapNumber,
+        lapTime: currentLap,
+        overallTime: overall,
+      );
+      _lapRecords.insert(0, lapRecord);
+      _lapStartTime = DateTime.now();
+      flutterTts.speak("Lap ${lapNumber.toString().padLeft(2, '0')}");
+      developer.log(
+        "Lap recorded: Lap ${lapNumber.toString().padLeft(2, '0')}, lap time: $currentLap, overall: $overall",
+        name: "TimerPage",
+      );
+      setState(() {});
     }
   }
 
@@ -333,6 +359,7 @@ class TimerPageState extends State<TimerPage> {
         setState(() {
           isActive = true;
           _startTime = DateTime.now();
+          _lapStartTime = DateTime.now();
         });
         developer.log(
           "Voice command executed: start/begin/resume",
@@ -351,6 +378,10 @@ class TimerPageState extends State<TimerPage> {
         });
         developer.log("Voice command executed: stop/pause", name: "TimerPage");
       }
+    } else if (commandText.contains("lap") || commandText.contains("split")) {
+      if (isActive && _lapStartTime != null) {
+        _handleLap();
+      }
     } else if (commandText.contains("reset") ||
         commandText.contains("clear") ||
         commandText.contains("restart") ||
@@ -360,6 +391,8 @@ class TimerPageState extends State<TimerPage> {
         isActive = false;
         _accumulated = Duration.zero;
         _startTime = null;
+        _lapStartTime = null;
+        _lapRecords.clear();
       });
       developer.log(
         "Voice command executed: reset/clear/restart/renew",
@@ -383,6 +416,138 @@ class TimerPageState extends State<TimerPage> {
     await prefs.setDouble('volume', volume);
     await prefs.setInt('intervalSeconds', intervalSeconds);
     await prefs.setBool('voiceControlEnabled', voiceControlEnabled);
+  }
+
+  void _handleReset() {
+    flutterTts.speak("Timer in zero");
+    setState(() {
+      isActive = false;
+      _accumulated = Duration.zero;
+      _startTime = null;
+      _lapStartTime = null;
+      _lapRecords.clear();
+    });
+    developer.log("Manual: Timer reset", name: "TimerPage");
+  }
+
+  Widget _buildLapTable() {
+    return Container(
+      height: 200,
+      child: SingleChildScrollView(
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Colors.white, width: 1),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: const [
+                  Expanded(
+                    child: Text(
+                      "Lap",
+                      style: TextStyle(fontSize: 12),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      "Lap times",
+                      style: TextStyle(fontSize: 12),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      "Overall time",
+                      style: TextStyle(fontSize: 12),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _lapRecords.length,
+              itemBuilder: (context, index) {
+                final lap = _lapRecords[index];
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        lap.lapNumber.toString().padLeft(2, '0'),
+                        style: const TextStyle(fontSize: 12),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        _formatTime(lap.lapTime),
+                        style: const TextStyle(fontSize: 12),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        _formatTime(lap.overallTime),
+                        style: const TextStyle(fontSize: 12),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Виджет для левой кнопки, которая выполняет либо lap, либо reset.
+  Widget _buildLapOrResetButton() {
+    if (isActive) {
+      return ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          minimumSize: const Size(150, 60),
+          shape: const StadiumBorder(),
+          backgroundColor: Colors.green,
+          foregroundColor: Colors.white,
+        ),
+        onPressed: _handleLap,
+        child: const Text('Lap'),
+      );
+    } else {
+      if (elapsed > Duration.zero) {
+        return ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            minimumSize: const Size(150, 60),
+            shape: const StadiumBorder(),
+            backgroundColor: Colors.blueAccent,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: _handleReset,
+          child: const Text('Reset'),
+        );
+      } else {
+        return ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            minimumSize: const Size(150, 60),
+            shape: const StadiumBorder(),
+            backgroundColor: Colors.grey,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: null,
+          child: const Text('Lap'),
+        );
+      }
+    }
   }
 
   @override
@@ -418,13 +583,19 @@ class TimerPageState extends State<TimerPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // Верхняя группа: часы, индикатор и распознанный текст.
+            // Верхняя группа: часы, lap timer, индикатор и распознанный текст, таблица кругов.
             Column(
               children: [
                 Text(
                   formattedTime,
                   style: const TextStyle(fontSize: 80, color: Colors.white),
                 ),
+                const SizedBox(height: 10),
+                if (isActive && _lapStartTime != null)
+                  Text(
+                    "Lap: ${_formatTime(DateTime.now().difference(_lapStartTime!))}",
+                    style: const TextStyle(fontSize: 40, color: Colors.white70),
+                  ),
                 const SizedBox(height: 20),
                 Icon(
                   voiceRecognitionActive ? Icons.mic : Icons.mic_off,
@@ -451,30 +622,17 @@ class TimerPageState extends State<TimerPage> {
                     ),
                   ),
                 ),
+                if (_lapRecords.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  _buildLapTable(),
+                ],
               ],
             ),
             // Нижняя группа: кнопки управления таймером.
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    minimumSize: const Size(150, 60),
-                    shape: const StadiumBorder(),
-                    backgroundColor: Colors.blueAccent,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: () {
-                    flutterTts.speak('Timer in zero');
-                    setState(() {
-                      isActive = false;
-                      _accumulated = Duration.zero;
-                      _startTime = null;
-                    });
-                    developer.log("Manual: Timer reset", name: "TimerPage");
-                  },
-                  child: const Text('Reset'),
-                ),
+                _buildLapOrResetButton(),
                 const SizedBox(width: 20),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
@@ -489,6 +647,7 @@ class TimerPageState extends State<TimerPage> {
                       setState(() {
                         isActive = true;
                         _startTime = DateTime.now();
+                        _lapStartTime = DateTime.now();
                       });
                       developer.log("Manual: Timer started", name: "TimerPage");
                     } else if (isActive && _startTime != null) {
@@ -638,3 +797,10 @@ class SettingsPageState extends State<SettingsPage> {
     );
   }
 }
+ /* 
+  В этом примере мы создали простое приложение таймера, которое можно управлять голосом. Пользователь может запустить, остановить, сбросить таймер и делать круги с помощью голосовых команд. 
+  Важно:  Вам нужно будет добавить разрешение на использование микрофона в вашем Android-приложении. Для этого добавьте следующую строку в ваш  AndroidManifest.xml : 
+  <uses-permission android:name="android.permission.RECORD_AUDIO" /> 
+  Вот как это выглядит: 
+  <?xml version="1.0" encoding="utf-8"?>
+  */
