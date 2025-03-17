@@ -23,6 +23,37 @@ class VoiceCommandService {
   SpeechService? speechService;
   final _controller = StreamController<VoiceCommandResult>.broadcast();
 
+  // Список слов, по которым реагировать.
+  static const List<String> commandWords = [
+    "start",
+    "begin",
+    "stop",
+    "pause",
+    "reset",
+    "clear",
+    "restart",
+    "renew",
+  ];
+
+  // Список слов, которые будут распознаны, но не вызовут реакцию.
+  // Здесь можно дополнять новые слова, если потребуется.
+  static const List<String> ignoreWords = [
+    "minute",
+    "minutes",
+    "seconds",
+    "timer",
+    "zero",
+    "completed",
+    "ten",
+    "twenty",
+    "thirty",
+    "forty",
+    "fifty",
+  ];
+
+  // grammarList – объединение commandWords и ignoreWords.
+  List<String> get grammarList => [...commandWords, ...ignoreWords];
+
   Stream<VoiceCommandResult> get commandStream => _controller.stream;
 
   Future<void> initialize() async {
@@ -54,23 +85,7 @@ class VoiceCommandService {
         name: "VoiceCommandService",
       );
 
-      // Устанавливаем грамматику для распознавания только нужных слов.
-      List<String> grammarList = [
-        "start",
-        "begin",
-        "stop",
-        "pause",
-        "reset",
-        "clear",
-        "restart",
-        "renew",
-        // Дополнительные слова, которые распознаются, но на них не реагируем:
-        "minute",
-        "minutes",
-        "seconds",
-        "timer",
-        "zero",
-      ];
+      // Устанавливаем грамматику – объединение commandWords и ignoreWords.
       await recognizer!.setGrammar(grammarList);
       developer.log(
         "Grammar set to: $grammarList",
@@ -104,35 +119,16 @@ class VoiceCommandService {
         if (recognized.isEmpty) {
           recognized = "-";
         }
-        // Определяем, является ли результат командой.
-        // Сначала проверяем на основные команды:
-        List<String> commandWords = [
-          "start",
-          "begin",
-          "stop",
-          "pause",
-          "reset",
-          "clear",
-          "restart",
-          "renew",
-        ];
         bool isCommand = false;
-        for (var word in commandWords) {
-          if (recognized.contains(word)) {
-            isCommand = true;
-            break;
+        // Если распознанный текст ровно равен одному из игнорируемых слов – не считается командой.
+        if (!ignoreWords.contains(recognized)) {
+          // Если в тексте содержится хотя бы одно слово из commandWords, считаем это командой.
+          for (var word in commandWords) {
+            if (recognized.contains(word)) {
+              isCommand = true;
+              break;
+            }
           }
-        }
-        // Если результат ровно равен одному из игнорируемых слов, то это не команда.
-        List<String> ignoreWords = [
-          "minute",
-          "minutes",
-          "seconds",
-          "timer",
-          "zero",
-        ];
-        if (ignoreWords.contains(recognized)) {
-          isCommand = false;
         }
         _controller.add(
           VoiceCommandResult(text: recognized, isCommand: isCommand),
@@ -325,7 +321,6 @@ class TimerPageState extends State<TimerPage> {
         flutterTts.speak("Timer started");
         setState(() {
           isActive = true;
-          // При запуске возобновляем отсчёт с накопленного времени.
           _startTime = DateTime.now();
         });
         developer.log("Voice command executed: start/begin", name: "TimerPage");
@@ -334,7 +329,7 @@ class TimerPageState extends State<TimerPage> {
       if (isActive && _startTime != null) {
         Duration currentRun = DateTime.now().difference(_startTime!);
         Duration total = _accumulated + currentRun;
-        flutterTts.speak(_formatAnnouncement(total));
+        flutterTts.speak("completed " + _formatAnnouncement(total));
         setState(() {
           isActive = false;
           _accumulated = total;
@@ -346,7 +341,6 @@ class TimerPageState extends State<TimerPage> {
         commandText.contains("clear") ||
         commandText.contains("restart") ||
         commandText.contains("renew")) {
-      // Изменяем голосовое объявление при сбросе.
       flutterTts.speak("Timer in zero");
       setState(() {
         isActive = false;
@@ -483,7 +477,9 @@ class TimerPageState extends State<TimerPage> {
                         _startTime!,
                       );
                       Duration total = _accumulated + currentRun;
-                      flutterTts.speak(_formatAnnouncement(total));
+                      flutterTts.speak(
+                        "completed " + _formatAnnouncement(total),
+                      );
                       setState(() {
                         isActive = false;
                         _accumulated = total;
