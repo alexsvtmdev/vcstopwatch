@@ -55,7 +55,7 @@ class VoiceCommandService {
     "minute",
     "minutes",
     "seconds",
-    "timer",
+    "stopwatch", // заменили "timer" на "stopwatch"
     "zero",
     "completed",
     "one",
@@ -72,7 +72,7 @@ class VoiceCommandService {
     "thirty",
     "forty",
     "fifty",
-    "circle", // добавлено слово "circle"
+    "circle",
   ];
 
   // grammarList – объединение commandWords и ignoreWords.
@@ -192,7 +192,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'VoiceControl Timer',
+      title: 'VoiceControl Stopwatch',
       theme: ThemeData(
         primarySwatch: Colors.blue,
         brightness: Brightness.dark,
@@ -299,6 +299,19 @@ class TimerPageState extends State<TimerPage> {
         }
       });
     });
+
+    _maybeShowHelpDialog();
+  }
+
+  Future<void> _maybeShowHelpDialog() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    bool helpShown = prefs.getBool('helpShown') ?? false;
+    if (!helpShown) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showHelpDialog();
+      });
+      await prefs.setBool('helpShown', true);
+    }
   }
 
   String _formatIntervalAnnouncement(Duration duration) {
@@ -336,7 +349,6 @@ class TimerPageState extends State<TimerPage> {
       Duration currentLap = DateTime.now().difference(_lapStartTime!);
       Duration overall = elapsed;
       int lapNumber = _lapRecords.length + 1;
-      // При голосовом оповещении используем слово "circle" и номер без ведущего нуля.
       flutterTts.speak("circle $lapNumber");
       LapRecord lapRecord = LapRecord(
         lapNumber: lapNumber,
@@ -359,7 +371,7 @@ class TimerPageState extends State<TimerPage> {
         commandText.contains("begin") ||
         commandText.contains("resume")) {
       if (!isActive) {
-        flutterTts.speak("Timer started");
+        flutterTts.speak("Stopwatch started");
         setState(() {
           isActive = true;
           _startTime = DateTime.now();
@@ -391,7 +403,7 @@ class TimerPageState extends State<TimerPage> {
         commandText.contains("clear") ||
         commandText.contains("restart") ||
         commandText.contains("renew")) {
-      flutterTts.speak("Timer in zero");
+      flutterTts.speak("Stopwatch in zero");
       setState(() {
         isActive = false;
         _accumulated = Duration.zero;
@@ -428,7 +440,6 @@ class TimerPageState extends State<TimerPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Заголовок таблицы фиксирован.
           Container(
             padding: const EdgeInsets.symmetric(vertical: 8),
             decoration: const BoxDecoration(
@@ -467,9 +478,7 @@ class TimerPageState extends State<TimerPage> {
                 children: List.generate(_lapRecords.length, (index) {
                   final lap = _lapRecords[index];
                   return Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 8,
-                    ), // увеличен отступ между строками
+                    padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -501,15 +510,12 @@ class TimerPageState extends State<TimerPage> {
               ),
             ),
           ),
-          const SizedBox(height: 16), // отступ между таблицей и кнопками
+          const SizedBox(height: 16),
         ],
       ),
     );
   }
 
-  // Виджет для левой кнопки: если таймер работает – "Lap" (с синей кнопкой),
-  // если остановлен и время > 0 – "Reset" (с красной кнопкой),
-  // если время равно нулю – "Lap" (неактивна, с серой кнопкой).
   Widget _buildLapOrResetButton() {
     if (isActive) {
       return ElevatedButton(
@@ -550,7 +556,7 @@ class TimerPageState extends State<TimerPage> {
   }
 
   void _handleReset() {
-    flutterTts.speak("Timer in zero");
+    flutterTts.speak("Stopwatch in zero");
     setState(() {
       isActive = false;
       _accumulated = Duration.zero;
@@ -558,7 +564,7 @@ class TimerPageState extends State<TimerPage> {
       _lapStartTime = null;
       _lapRecords.clear();
     });
-    developer.log("Manual: Timer reset", name: "TimerPage");
+    developer.log("Manual: Stopwatch reset", name: "TimerPage");
   }
 
   @override
@@ -576,7 +582,6 @@ class TimerPageState extends State<TimerPage> {
     final screenHeight = MediaQuery.of(context).size.height;
     Widget upperGroup;
     if (_lapRecords.isEmpty) {
-      // Если кругов нет, основные часы занимают примерно 1/3 экрана, выровнены по нижнему краю контейнера.
       upperGroup = Container(
         height: screenHeight * 0.33,
         alignment: Alignment.bottomCenter,
@@ -616,7 +621,6 @@ class TimerPageState extends State<TimerPage> {
         ],
       );
     } else {
-      // Если есть записи, выравниваем верхнюю группу по верхнему краю.
       upperGroup = Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -660,9 +664,13 @@ class TimerPageState extends State<TimerPage> {
     }
     return Scaffold(
       appBar: AppBar(
-        title: const Text('VoiceControl Timer'),
+        title: const Text('VoiceControl Stopwatch'),
         backgroundColor: const Color(0xFF001F3F),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline),
+            onPressed: _showHelpDialog,
+          ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {
@@ -681,6 +689,7 @@ class TimerPageState extends State<TimerPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
+            // Верхняя группа: если кругов нет, часы занимают 33% экрана; иначе – выравниваются по верхнему краю.
             Expanded(child: upperGroup),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -696,13 +705,16 @@ class TimerPageState extends State<TimerPage> {
                   ),
                   onPressed: () {
                     if (!isActive) {
-                      flutterTts.speak('Timer started');
+                      flutterTts.speak('Stopwatch started');
                       setState(() {
                         isActive = true;
                         _startTime = DateTime.now();
                         _lapStartTime = DateTime.now();
                       });
-                      developer.log("Manual: Timer started", name: "TimerPage");
+                      developer.log(
+                        "Manual: Stopwatch started",
+                        name: "TimerPage",
+                      );
                     } else if (isActive && _startTime != null) {
                       Duration currentRun = DateTime.now().difference(
                         _startTime!,
@@ -715,7 +727,10 @@ class TimerPageState extends State<TimerPage> {
                         _accumulated = total;
                         _startTime = null;
                       });
-                      developer.log("Manual: Timer stopped", name: "TimerPage");
+                      developer.log(
+                        "Manual: Stopwatch stopped",
+                        name: "TimerPage",
+                      );
                     }
                   },
                   child: Text(
@@ -729,6 +744,78 @@ class TimerPageState extends State<TimerPage> {
           ],
         ),
       ),
+    );
+  }
+
+  // Единственная реализация _showHelpDialog.
+  void _showHelpDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text(
+            "Help",
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    "Available Voice Commands:",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    "- Start / Begin / Resume: Start or resume the stopwatch.",
+                  ),
+                  Text(
+                    "- Stop / Pause: Stop the stopwatch and announce the elapsed time.",
+                  ),
+                  Text(
+                    "- Lap / Split: Record the current lap time and overall time.",
+                  ),
+                  Text(
+                    "- Reset / Clear / Restart / Renew: Reset the stopwatch to zero.",
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    "About the App:",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    "This is a VoiceControl Stopwatch app. You can control the stopwatch with voice commands.",
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    "Requirements:",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 8),
+                  Text("Android version 11 or higher is required."),
+                  SizedBox(height: 16),
+                  Text(
+                    "Licenses:",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 8),
+                  Text("Components are used under the Apache 2.0 License."),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Close"),
+            ),
+          ],
+        );
+      },
     );
   }
 }
