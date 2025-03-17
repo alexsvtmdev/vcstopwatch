@@ -1,10 +1,103 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io'; // для проверки платформы
+import 'dart:io';
+import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:vosk_flutter_2/vosk_flutter_2.dart'; // Обратите внимание на правильный импорт
+import 'package:vosk_flutter_2/vosk_flutter_2.dart';
+
+/// Сервис для голосовых команд, который инициализирует модель,
+/// распознаёт аудио и передаёт команды через поток.
+class VoiceCommandService {
+  final VoskFlutterPlugin _vosk = VoskFlutterPlugin.instance();
+  final ModelLoader _modelLoader = ModelLoader();
+  Model? model;
+  Recognizer? recognizer;
+  SpeechService? speechService;
+  final _controller = StreamController<String>.broadcast();
+
+  Stream<String> get commandStream => _controller.stream;
+
+  Future<void> initialize() async {
+    const modelName = 'vosk-model-small-en-us-0.15';
+    const sampleRate = 16000;
+    try {
+      final modelsList = await _modelLoader.loadModelsList();
+      final modelDescription = modelsList.firstWhere(
+        (m) => m.name == modelName,
+      );
+      // Здесь можно заменить загрузку по сети на локальную модель (из assets)
+      final modelPath = await _modelLoader.loadFromNetwork(
+        modelDescription.url,
+      );
+      model = await _vosk.createModel(modelPath);
+      recognizer = await _vosk.createRecognizer(
+        model: model!,
+        sampleRate: sampleRate,
+      );
+      if (Platform.isAndroid) {
+        speechService = await _vosk.initSpeechService(recognizer!);
+        speechService!.onResult().listen((result) {
+          processResult(result);
+        });
+      }
+      developer.log(
+        "VoiceCommandService initialized.",
+        name: "VoiceCommandService",
+      );
+    } catch (e) {
+      developer.log(
+        "Error in VoiceCommandService.initialize: $e",
+        name: "VoiceCommandService",
+      );
+    }
+  }
+
+  void processResult(String resultJson) {
+    developer.log("Raw voice result: $resultJson", name: "VoiceCommandService");
+    try {
+      final result = jsonDecode(resultJson);
+      if (result.containsKey('text')) {
+        String recognized = result['text'].toLowerCase();
+        developer.log(
+          "Recognized text: $recognized",
+          name: "VoiceCommandService",
+        );
+        if (recognized.contains("start")) {
+          _controller.add("start");
+        } else if (recognized.contains("stop")) {
+          _controller.add("stop");
+        } else if (recognized.contains("reset")) {
+          _controller.add("reset");
+        }
+      }
+    } catch (e) {
+      developer.log(
+        "Error processing voice result: $e",
+        name: "VoiceCommandService",
+      );
+    }
+  }
+
+  Future<void> startListening() async {
+    if (speechService != null) {
+      await speechService!.start();
+      developer.log("Voice recognition started.", name: "VoiceCommandService");
+    }
+  }
+
+  Future<void> stopListening() async {
+    if (speechService != null) {
+      await speechService!.stop();
+      developer.log("Voice recognition stopped.", name: "VoiceCommandService");
+    }
+  }
+
+  void dispose() {
+    _controller.close();
+  }
+}
 
 void main() {
   runApp(const MyApp());
@@ -31,138 +124,90 @@ class TimerPage extends StatefulWidget {
 
 class TimerPageState extends State<TimerPage> {
   final FlutterTts flutterTts = FlutterTts();
-  Timer? timer;
-  int timeMilliseconds = 0;
+  Timer? _uiTimer;
+  DateTime? _startTime;
+  Duration _elapsed = Duration.zero;
   bool isActive = false;
   double volume = 1.0;
   int intervalSeconds = 30;
   bool voiceControlEnabled = true;
+  // Индикатор состояния распознавания
+  bool voiceRecognitionActive = false;
 
-  // Параметры для VoskFlutter2
-  final _vosk = VoskFlutterPlugin.instance();
-  final _modelLoader = ModelLoader();
-  Model? model;
-  Recognizer? recognizer;
-  SpeechService? speechService;
-  String? error;
-  bool recognitionStarted = false;
+  late VoiceCommandService voiceService;
+  StreamSubscription<String>? _voiceSub;
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
     flutterTts.setVolume(volume);
-    // Таймер обновляется каждые 10 мс; увеличиваем время на 20 мс для ускорения в 2 раза.
-    timer = Timer.periodic(const Duration(milliseconds: 10), (Timer t) {
-      handleTick();
-    });
-    initVosk();
-  }
-
-  Future<void> initVosk() async {
-    const modelName = 'vosk-model-small-en-us-0.15';
-    const sampleRate = 16000;
-    try {
-      // Загружаем список моделей и выбираем нужную
-      final modelsList = await _modelLoader.loadModelsList();
-      final modelDescription = modelsList.firstWhere(
-        (m) => m.name == modelName,
-      );
-      // Загрузка модели по сети (можно заменить на локальную, если модель положена в assets)
-      final modelPath = await _modelLoader.loadFromNetwork(
-        modelDescription.url,
-      );
-      model = await _vosk.createModel(modelPath);
-      // Создаем распознающий объект
-      recognizer = await _vosk.createRecognizer(
-        model: model!,
-        sampleRate: sampleRate,
-      );
-
-      // Для Android и других платформ с микрофоном инициализируем службу распознавания
-      if (Platform.isAndroid) {
-        speechService = await _vosk.initSpeechService(recognizer!);
-        // Подписываемся на поток результатов.
-        speechService!.onResult().listen((result) {
-          processVoskResult(result);
+    // Используем UI таймер для обновления отображения времени (каждые 50 мс)
+    _uiTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      if (isActive && _startTime != null) {
+        setState(() {
+          _elapsed = DateTime.now().difference(_startTime!);
         });
-        print("Speech service initialized and listening.");
-        // Запускаем распознавание сразу, если voiceControlEnabled = true.
-        if (voiceControlEnabled) {
-          await speechService!.start();
-          setState(() {
-            recognitionStarted = true;
-          });
-          print("Voice recognition started automatically.");
-        }
-      }
-    } catch (e) {
-      setState(() {
-        error = e.toString();
-      });
-      print("Error initializing Vosk: $error");
-    }
-  }
-
-  void handleTick() {
-    if (isActive) {
-      // Увеличиваем время на 20 мс (в два раза быстрее)
-      setState(() {
-        timeMilliseconds += 20;
-      });
-      int totalSeconds = timeMilliseconds ~/ 1000;
-      int minutes = totalSeconds ~/ 60;
-      int seconds = totalSeconds % 60;
-      // Произношение времени через заданный интервал
-      if (totalSeconds > 0 && totalSeconds % intervalSeconds == 0) {
-        String timeAnnouncement;
-        if (seconds == 0) {
-          timeAnnouncement = "$minutes minute${minutes != 1 ? "s" : ""}";
-        } else {
-          timeAnnouncement =
-              "${minutes > 0 ? "$minutes minute${minutes != 1 ? "s" : ""} and " : ""}$seconds second${seconds != 1 ? "s" : ""}";
-        }
-        flutterTts.speak(timeAnnouncement);
-        print("Announced time: $timeAnnouncement");
-      }
-    }
-  }
-
-  void processVoskResult(String resultJson) {
-    print("Raw recognition result: $resultJson");
-    final result = jsonDecode(resultJson);
-    if (result.containsKey('text')) {
-      String recognized = result['text'].toLowerCase();
-      print("Recognized text: $recognized");
-      if (recognized.contains("start")) {
-        if (!isActive) {
-          flutterTts.speak("Timer started");
-          setState(() {
-            isActive = true;
-          });
-          print("Command recognized: start");
-        }
-      } else if (recognized.contains("stop")) {
-        if (isActive) {
-          int totalSeconds = timeMilliseconds ~/ 1000;
-          int displayMinutes = totalSeconds ~/ 60;
-          int displaySeconds = totalSeconds % 60;
-          String announcement =
-              "Timer stopped at $displayMinutes minute${displayMinutes != 1 ? "s" : ""} and $displaySeconds second${displaySeconds != 1 ? "s" : ""}";
+        // Если время кратно интервалу, произносим время
+        int totalSeconds = _elapsed.inSeconds;
+        if (totalSeconds > 0 && totalSeconds % intervalSeconds == 0) {
+          String announcement = _formatTime(_elapsed);
           flutterTts.speak(announcement);
-          setState(() {
-            isActive = false;
-          });
-          print("Command recognized: stop");
+          developer.log("Announced time: $announcement", name: "TimerPage");
         }
-      } else if (recognized.contains("reset")) {
+      }
+    });
+    // Инициализируем сервис голосовых команд
+    voiceService = VoiceCommandService();
+    voiceService.initialize().then((_) {
+      if (voiceControlEnabled) {
+        voiceService.startListening().then((_) {
+          setState(() {
+            voiceRecognitionActive = true;
+          });
+        });
+      }
+      // Подписываемся на поток команд
+      _voiceSub = voiceService.commandStream.listen((command) {
+        developer.log("Received voice command: $command", name: "TimerPage");
+        _handleVoiceCommand(command);
+      });
+    });
+  }
+
+  String _formatTime(Duration duration) {
+    int minutes = duration.inMinutes;
+    int seconds = duration.inSeconds % 60;
+    return "$minutes minute${minutes != 1 ? "s" : ""} and $seconds second${seconds != 1 ? "s" : ""}";
+  }
+
+  void _handleVoiceCommand(String command) {
+    if (command == "start") {
+      if (!isActive) {
+        flutterTts.speak("Timer started");
+        setState(() {
+          isActive = true;
+          _startTime = DateTime.now();
+          _elapsed = Duration.zero;
+        });
+        developer.log("Voice command executed: start", name: "TimerPage");
+      }
+    } else if (command == "stop") {
+      if (isActive) {
+        flutterTts.speak("Timer stopped");
         setState(() {
           isActive = false;
-          timeMilliseconds = 0;
         });
-        flutterTts.speak("Timer reset");
-        print("Command recognized: reset");
+        developer.log("Voice command executed: stop", name: "TimerPage");
       }
+    } else if (command == "reset") {
+      flutterTts.speak("Timer reset");
+      setState(() {
+        isActive = false;
+        _elapsed = Duration.zero;
+        _startTime = null;
+      });
+      developer.log("Voice command executed: reset", name: "TimerPage");
     }
   }
 
@@ -185,30 +230,17 @@ class TimerPageState extends State<TimerPage> {
 
   @override
   void dispose() {
-    timer?.cancel();
-    speechService?.stop();
+    _uiTimer?.cancel();
+    _voiceSub?.cancel();
+    voiceService.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (error != null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('VoiceControl Timer')),
-        body: Center(
-          child: Text(
-            "Error: $error",
-            style: const TextStyle(color: Colors.red, fontSize: 20),
-          ),
-        ),
-      );
-    }
-
-    double displaySeconds = (timeMilliseconds / 1000) % 60;
-    int displayMinutes = (timeMilliseconds / (1000 * 60)).floor();
+    // Форматируем время в виде MM:SS
     String formattedTime =
-        "${displayMinutes.toString().padLeft(2, '0')}:${displaySeconds.toStringAsFixed(2).padLeft(5, '0')}";
-
+        "${_elapsed.inMinutes.toString().padLeft(2, '0')}:${(_elapsed.inSeconds % 60).toString().padLeft(2, '0')}";
     return Scaffold(
       appBar: AppBar(
         title: const Text('VoiceControl Timer'),
@@ -225,8 +257,7 @@ class TimerPageState extends State<TimerPage> {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 40.0, horizontal: 20.0),
+      body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -240,14 +271,14 @@ class TimerPageState extends State<TimerPage> {
                 ),
                 const SizedBox(width: 20),
                 Icon(
-                  recognitionStarted ? Icons.mic : Icons.mic_off,
-                  color: recognitionStarted ? Colors.green : Colors.red,
+                  voiceRecognitionActive ? Icons.mic : Icons.mic_off,
+                  color: voiceRecognitionActive ? Colors.green : Colors.red,
                   size: 40,
                 ),
               ],
             ),
             const SizedBox(height: 40),
-            // Кнопки управления таймером
+            // Кнопки управления таймером (ручное управление)
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
@@ -259,12 +290,13 @@ class TimerPageState extends State<TimerPage> {
                     foregroundColor: Colors.white,
                   ),
                   onPressed: () {
+                    flutterTts.speak('Timer reset');
                     setState(() {
                       isActive = false;
-                      timeMilliseconds = 0;
+                      _elapsed = Duration.zero;
+                      _startTime = null;
                     });
-                    flutterTts.speak('Timer reset');
-                    print("Timer reset manually");
+                    developer.log("Manual: Timer reset", name: "TimerPage");
                   },
                   child: const Text('Reset'),
                 ),
@@ -280,19 +312,16 @@ class TimerPageState extends State<TimerPage> {
                       flutterTts.speak('Timer started');
                       setState(() {
                         isActive = true;
+                        _startTime = DateTime.now();
+                        _elapsed = Duration.zero;
                       });
-                      print("Timer started manually");
+                      developer.log("Manual: Timer started", name: "TimerPage");
                     } else {
-                      int totalSeconds = timeMilliseconds ~/ 1000;
-                      int displayMinutes = totalSeconds ~/ 60;
-                      int displaySeconds = totalSeconds % 60;
-                      String announcement =
-                          "Timer stopped at $displayMinutes minute${displayMinutes != 1 ? "s" : ""} and $displaySeconds second${displaySeconds != 1 ? "s" : ""}";
-                      flutterTts.speak(announcement);
+                      flutterTts.speak('Timer stopped');
                       setState(() {
                         isActive = false;
                       });
-                      print("Timer stopped manually");
+                      developer.log("Manual: Timer stopped", name: "TimerPage");
                     }
                   },
                   child: Text(isActive ? 'Stop' : 'Start'),
@@ -302,7 +331,6 @@ class TimerPageState extends State<TimerPage> {
           ],
         ),
       ),
-      // Убрана кнопка микрофона, так как распознавание работает постоянно, если включено в настройках.
     );
   }
 }
@@ -395,16 +423,26 @@ class SettingsPageState extends State<SettingsPage> {
                 setState(() {
                   widget.state.voiceControlEnabled = value;
                   widget.state._saveSettings();
-                  // Если голосовое управление включено, запустить распознавание,
-                  // иначе остановить службу.
-                  if (value && !widget.state.recognitionStarted) {
-                    widget.state.speechService?.start();
-                    widget.state.recognitionStarted = true;
-                    print("Voice recognition enabled via settings.");
-                  } else if (!value && widget.state.recognitionStarted) {
-                    widget.state.speechService?.stop();
-                    widget.state.recognitionStarted = false;
-                    print("Voice recognition disabled via settings.");
+                  if (value && !widget.state.voiceRecognitionActive) {
+                    widget.state.voiceService.startListening().then((_) {
+                      setState(() {
+                        widget.state.voiceRecognitionActive = true;
+                      });
+                      developer.log(
+                        "Voice recognition enabled via settings.",
+                        name: "SettingsPage",
+                      );
+                    });
+                  } else if (!value && widget.state.voiceRecognitionActive) {
+                    widget.state.voiceService.stopListening().then((_) {
+                      setState(() {
+                        widget.state.voiceRecognitionActive = false;
+                      });
+                      developer.log(
+                        "Voice recognition disabled via settings.",
+                        name: "SettingsPage",
+                      );
+                    });
                   }
                 });
               },
