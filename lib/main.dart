@@ -75,7 +75,7 @@ class VoiceCommandService {
     "circle", // добавлено слово "circle"
   ];
 
-  // Объединённый список для грамматики.
+  // grammarList – объединение commandWords и ignoreWords.
   List<String> get grammarList => [...commandWords, ...ignoreWords];
 
   Stream<VoiceCommandResult> get commandStream => _controller.stream;
@@ -193,11 +193,11 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'VoiceControl Timer',
-      // Устанавливаем фон приложения deep navy
       theme: ThemeData(
         primarySwatch: Colors.blue,
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF001F3F),
+        appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF001F3F)),
       ),
       home: const TimerPage(),
     );
@@ -336,7 +336,7 @@ class TimerPageState extends State<TimerPage> {
       Duration currentLap = DateTime.now().difference(_lapStartTime!);
       Duration overall = elapsed;
       int lapNumber = _lapRecords.length + 1;
-      // Голосовое объявление: если lapNumber больше нуля, читаем его; иначе (не должно быть 0) – игнорируем.
+      // При голосовом оповещении используем слово "circle" и номер без ведущего нуля.
       flutterTts.speak("circle $lapNumber");
       LapRecord lapRecord = LapRecord(
         lapNumber: lapNumber,
@@ -425,86 +425,91 @@ class TimerPageState extends State<TimerPage> {
 
   Widget _buildLapTable() {
     return Expanded(
-      child: SingleChildScrollView(
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              decoration: const BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: Colors.white, width: 1),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Заголовок таблицы фиксирован.
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Colors.white, width: 1)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: const [
+                Expanded(
+                  child: Text(
+                    "Lap",
+                    style: TextStyle(fontSize: 18),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
-                  Expanded(
-                    child: Text(
-                      "Lap",
-                      style: TextStyle(fontSize: 16),
-                      textAlign: TextAlign.center,
-                    ),
+                Expanded(
+                  child: Text(
+                    "Lap times",
+                    style: TextStyle(fontSize: 18),
+                    textAlign: TextAlign.center,
                   ),
-                  Expanded(
-                    child: Text(
-                      "Lap times",
-                      style: TextStyle(fontSize: 16),
-                      textAlign: TextAlign.center,
-                    ),
+                ),
+                Expanded(
+                  child: Text(
+                    "Overall time",
+                    style: TextStyle(fontSize: 18),
+                    textAlign: TextAlign.center,
                   ),
-                  Expanded(
-                    child: Text(
-                      "Overall time",
-                      style: TextStyle(fontSize: 16),
-                      textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: List.generate(_lapRecords.length, (index) {
+                  final lap = _lapRecords[index];
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 8,
+                    ), // увеличен отступ между строками
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            lap.lapNumber.toString(),
+                            style: const TextStyle(fontSize: 18),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            _formatTime(lap.lapTime),
+                            style: const TextStyle(fontSize: 18),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            _formatTime(lap.overallTime),
+                            style: const TextStyle(fontSize: 18),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                  );
+                }),
               ),
             ),
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _lapRecords.length,
-              itemBuilder: (context, index) {
-                final lap = _lapRecords[index];
-                return Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        lap.lapNumber.toString(),
-                        style: const TextStyle(fontSize: 16),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        _formatTime(lap.lapTime),
-                        style: const TextStyle(fontSize: 16),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        _formatTime(lap.overallTime),
-                        style: const TextStyle(fontSize: 16),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 16), // отступ между таблицей и кнопками
+        ],
       ),
     );
   }
 
-  // Виджет для левой кнопки: если таймер работает, показывает "Lap" (с синей кнопкой),
+  // Виджет для левой кнопки: если таймер работает – "Lap" (с синей кнопкой),
   // если остановлен и время > 0 – "Reset" (с красной кнопкой),
-  // если время равно нулю – "Lap" (неактивна, серая).
+  // если время равно нулю – "Lap" (неактивна, с серой кнопкой).
   Widget _buildLapOrResetButton() {
     if (isActive) {
       return ElevatedButton(
@@ -569,10 +574,9 @@ class TimerPageState extends State<TimerPage> {
   Widget build(BuildContext context) {
     String formattedTime = _formatTime(elapsed);
     final screenHeight = MediaQuery.of(context).size.height;
-    // Если нет записей кругов, верхняя группа занимает примерно 1/3 экрана (выравнивание вниз),
-    // иначе – выравнивание по верхнему краю.
     Widget upperGroup;
     if (_lapRecords.isEmpty) {
+      // Если кругов нет, основные часы занимают примерно 1/3 экрана, выровнены по нижнему краю контейнера.
       upperGroup = Container(
         height: screenHeight * 0.33,
         alignment: Alignment.bottomCenter,
@@ -612,6 +616,7 @@ class TimerPageState extends State<TimerPage> {
         ],
       );
     } else {
+      // Если есть записи, выравниваем верхнюю группу по верхнему краю.
       upperGroup = Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -656,6 +661,7 @@ class TimerPageState extends State<TimerPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('VoiceControl Timer'),
+        backgroundColor: const Color(0xFF001F3F),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
@@ -754,6 +760,7 @@ class SettingsPageState extends State<SettingsPage> {
             padding: const EdgeInsets.only(top: 20),
             child: AppBar(
               title: const Text("Settings"),
+              backgroundColor: const Color(0xFF001F3F),
               leading: Padding(
                 padding: const EdgeInsets.only(top: 10),
                 child: IconButton(
@@ -775,6 +782,7 @@ class SettingsPageState extends State<SettingsPage> {
           ),
         ),
       ),
+      backgroundColor: const Color(0xFF001F3F),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
