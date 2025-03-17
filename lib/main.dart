@@ -29,13 +29,14 @@ class TimerPage extends StatefulWidget {
 class TimerPageState extends State<TimerPage> {
   final FlutterTts flutterTts = FlutterTts();
   Timer? timer;
+  Timer? listeningChecker;
   int timeMilliseconds = 0;
   bool isActive = false;
-  double volume = 1.0; // Максимальная громкость по умолчанию
-  int intervalSeconds = 30; // Интервал оповещений по умолчанию: 30 секунд
-  bool voiceControlEnabled = true; // Голосовое управление включено по умолчанию
+  double volume = 1.0;
+  int intervalSeconds = 30;
+  bool voiceControlEnabled = true;
 
-  // Распознавание речи
+  // Speech-to-text объект
   late stt.SpeechToText _speech;
   bool _isListening = false;
 
@@ -44,17 +45,30 @@ class TimerPageState extends State<TimerPage> {
     super.initState();
     _loadSettings();
     flutterTts.setVolume(volume);
-    // Запускаем таймер, который каждые 10 мс вызывает handleTick()
     timer = Timer.periodic(const Duration(milliseconds: 10), (Timer t) {
       handleTick();
     });
     _initSpeech();
+    // Проверка прослушивания каждые 10 секунд
+    listeningChecker = Timer.periodic(const Duration(seconds: 10), (Timer t) {
+      if (voiceControlEnabled && !_isListening) {
+        debugPrint("ListeningChecker: Not listening, restarting...");
+        _startListening();
+      }
+    });
   }
 
   Future<void> _initSpeech() async {
     _speech = stt.SpeechToText();
-    bool available = await _speech.initialize();
-    debugPrint("SpeechToText initialization: available = $available");
+    bool available = await _speech.initialize(
+      onError: (error) {
+        debugPrint("SpeechToText error: $error");
+      },
+    );
+    debugPrint("SpeechToText initialized: available = $available");
+    if (voiceControlEnabled && available) {
+      _startListening();
+    }
   }
 
   Future<void> _loadSettings() async {
@@ -75,7 +89,9 @@ class TimerPageState extends State<TimerPage> {
     await prefs.setDouble('volume', volume);
     await prefs.setInt('intervalSeconds', intervalSeconds);
     await prefs.setBool('voiceControlEnabled', voiceControlEnabled);
-    debugPrint("Settings saved");
+    debugPrint(
+      "Settings saved: volume=$volume, intervalSeconds=$intervalSeconds, voiceControlEnabled=$voiceControlEnabled",
+    );
   }
 
   void handleTick() {
@@ -97,65 +113,92 @@ class TimerPageState extends State<TimerPage> {
     }
   }
 
-  void _toggleListening() async {
+  String _formattedTime() {
+    double seconds = (timeMilliseconds / 1000) % 60;
+    int minutes = (timeMilliseconds / 60000).floor();
+    return "${minutes.toString().padLeft(2, '0')}:${seconds.toStringAsFixed(2).padLeft(5, '0')}";
+  }
+
+  void _startTimer() {
+    if (!isActive) {
+      debugPrint("Voice command: Timer started.");
+      flutterTts.speak("Timer started");
+      setState(() {
+        isActive = true;
+      });
+    } else {
+      flutterTts.speak("Timer is already running");
+    }
+  }
+
+  void _pauseTimer() {
+    if (isActive) {
+      debugPrint("Voice command: Timer paused at ${_formattedTime()}.");
+      flutterTts.speak("Timer paused at ${_formattedTime()}");
+      setState(() {
+        isActive = false;
+      });
+    } else {
+      flutterTts.speak("Timer is not running");
+    }
+  }
+
+  void _resetTimer() {
+    debugPrint("Voice command: Timer reset.");
+    flutterTts.speak("Timer reset");
+    setState(() {
+      isActive = false;
+      timeMilliseconds = 0;
+    });
+  }
+
+  void _startListening() async {
+    if (!voiceControlEnabled) {
+      debugPrint("Voice control is disabled, not starting listening.");
+      return;
+    }
+    debugPrint("Starting speech recognition for 2 hours...");
+    bool available = await _speech.initialize();
+    if (available) {
+      setState(() {
+        _isListening = true;
+      });
+      _speech.listen(
+        onResult: (result) {
+          debugPrint("Speech result: ${result.recognizedWords}");
+          String recognized = result.recognizedWords.toLowerCase();
+          if (recognized.contains("start")) {
+            debugPrint("Voice command 'start' detected.");
+            _startTimer();
+          } else if (recognized.contains("stop")) {
+            debugPrint("Voice command 'stop' detected.");
+            _pauseTimer();
+          } else if (recognized.contains("reset")) {
+            debugPrint("Voice command 'reset' detected.");
+            _resetTimer();
+          } else {
+            debugPrint("No valid command found in: $recognized");
+          }
+          // Не вызываем _speech.stop(), чтобы продолжить прослушивание.
+        },
+        listenFor: const Duration(hours: 2),
+        pauseFor: const Duration(hours: 2),
+        partialResults: false,
+        localeId: "en_US",
+      );
+      debugPrint("Speech recognition started.");
+    } else {
+      debugPrint("Speech recognition not available.");
+    }
+  }
+
+  void _toggleListening() {
     if (!voiceControlEnabled) {
       debugPrint("Voice control is disabled.");
       return;
     }
     if (!_isListening) {
-      debugPrint("Starting speech recognition...");
-      bool available = await _speech.initialize();
-      if (available) {
-        setState(() {
-          _isListening = true;
-        });
-        _speech.listen(
-          onResult: (result) {
-            debugPrint("Speech result: ${result.recognizedWords}");
-            String recognized = result.recognizedWords.toLowerCase();
-            if (recognized.contains("start")) {
-              debugPrint("Command 'start' recognized.");
-              if (!isActive) {
-                flutterTts.speak("Timer started");
-                setState(() {
-                  isActive = true;
-                });
-              }
-            } else if (recognized.contains("stop")) {
-              debugPrint("Command 'stop' recognized.");
-              if (isActive) {
-                int totalSeconds = timeMilliseconds ~/ 1000;
-                int displayMinutes = totalSeconds ~/ 60;
-                int displaySeconds = totalSeconds % 60;
-                String announcement =
-                    "Timer stopped at $displayMinutes minute${displayMinutes != 1 ? "s" : ""} and $displaySeconds second${displaySeconds != 1 ? "s" : ""}";
-                flutterTts.speak(announcement);
-                setState(() {
-                  isActive = false;
-                });
-              }
-            } else if (recognized.contains("reset")) {
-              debugPrint("Command 'reset' recognized.");
-              setState(() {
-                isActive = false;
-                timeMilliseconds = 0;
-              });
-              flutterTts.speak("Timer reset");
-            } else {
-              debugPrint("No valid command found in: $recognized");
-            }
-            _speech.stop();
-            debugPrint("Speech recognition stopped after processing.");
-            setState(() {
-              _isListening = false;
-            });
-          },
-          localeId: "en_US",
-        );
-        debugPrint("Speech recognition started.");
-      } else {
-        debugPrint("Speech recognition not available.");
-      }
+      _startListening();
     } else {
       _speech.stop();
       debugPrint("Speech recognition manually stopped.");
@@ -168,16 +211,14 @@ class TimerPageState extends State<TimerPage> {
   @override
   void dispose() {
     timer?.cancel();
+    listeningChecker?.cancel();
     _speech.stop();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    double displaySeconds = (timeMilliseconds / 1000) % 60;
-    int displayMinutes = (timeMilliseconds / (1000 * 60)).floor();
-    String formattedTime =
-        "${displayMinutes.toString().padLeft(2, '0')}:${displaySeconds.toStringAsFixed(2).padLeft(5, '0')}";
+    String formattedTime = _formattedTime();
     return Scaffold(
       appBar: AppBar(
         title: const Text('VoiceControl Timer'),
@@ -199,12 +240,12 @@ class TimerPageState extends State<TimerPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // Отображаем иконку состояния голосового распознавания над таймером.
+            // Иконка состояния голосового распознавания над таймером.
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  _isListening ? Icons.mic : Icons.mic_none,
+                  _isListening ? Icons.mic : Icons.mic_off,
                   size: 40,
                   color: _isListening ? Colors.green : Colors.red,
                 ),
