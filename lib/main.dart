@@ -44,11 +44,6 @@ class VoiceCommandService {
     "timer",
     "zero",
     "completed",
-    "ten",
-    "twenty",
-    "thirty",
-    "forty",
-    "fifty",
     "one",
     "two",
     "three",
@@ -58,6 +53,11 @@ class VoiceCommandService {
     "seven",
     "eight",
     "nine",
+    "ten",
+    "twenty",
+    "thirty",
+    "forty",
+    "fifty",
   ];
 
   // grammarList – объединение commandWords и ignoreWords.
@@ -408,42 +408,47 @@ class TimerPageState extends State<TimerPage> {
           ),
         ],
       ),
-      body: Center(
+      body: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              formattedTime,
-              style: const TextStyle(fontSize: 80, color: Colors.white),
-            ),
-            const SizedBox(height: 20),
-            // Индикатор голосового распознавания.
-            Icon(
-              voiceRecognitionActive ? Icons.mic : Icons.mic_off,
-              color: voiceRecognitionActive ? Colors.green : Colors.red,
-              size: 40,
-            ),
-            const SizedBox(height: 10),
-            // Фиксированное место для отображения распознанного текста.
-            SizedBox(
-              height: 20,
-              child: Center(
-                child: Text(
-                  _displayedVoiceText ?? " ",
-                  style: TextStyle(
-                    fontSize: 16,
-                    color:
-                        _displayedVoiceIsCommand ? Colors.green : Colors.orange,
-                    fontWeight:
-                        _displayedVoiceIsCommand
-                            ? FontWeight.bold
-                            : FontWeight.normal,
+            // Верхняя группа: часы, индикатор и распознанный текст.
+            Column(
+              children: [
+                Text(
+                  formattedTime,
+                  style: const TextStyle(fontSize: 80, color: Colors.white),
+                ),
+                const SizedBox(height: 20),
+                Icon(
+                  voiceRecognitionActive ? Icons.mic : Icons.mic_off,
+                  color: voiceRecognitionActive ? Colors.green : Colors.red,
+                  size: 40,
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 20,
+                  child: Center(
+                    child: Text(
+                      _displayedVoiceText ?? " ",
+                      style: TextStyle(
+                        fontSize: 16,
+                        color:
+                            _displayedVoiceIsCommand
+                                ? Colors.green
+                                : Colors.orange,
+                        fontWeight:
+                            _displayedVoiceIsCommand
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                      ),
+                    ),
                   ),
                 ),
-              ),
+              ],
             ),
-            const SizedBox(height: 40),
-            // Ручное управление таймером.
+            // Нижняя группа: кнопки управления таймером.
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
