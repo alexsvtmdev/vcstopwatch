@@ -64,6 +64,12 @@ class VoiceCommandService {
         "clear",
         "restart",
         "renew",
+        // Дополнительные слова, которые распознаются, но на них не реагируем:
+        "minute",
+        "minutes",
+        "seconds",
+        "timer",
+        "zero",
       ];
       await recognizer!.setGrammar(grammarList);
       developer.log(
@@ -98,17 +104,35 @@ class VoiceCommandService {
         if (recognized.isEmpty) {
           recognized = "-";
         }
+        // Определяем, является ли результат командой.
+        // Сначала проверяем на основные команды:
+        List<String> commandWords = [
+          "start",
+          "begin",
+          "stop",
+          "pause",
+          "reset",
+          "clear",
+          "restart",
+          "renew",
+        ];
         bool isCommand = false;
-        // Если распознаны ключевые слова (включая синонимы), считаем результат командой.
-        if (recognized.contains("start") ||
-            recognized.contains("begin") ||
-            recognized.contains("stop") ||
-            recognized.contains("pause") ||
-            recognized.contains("reset") ||
-            recognized.contains("clear") ||
-            recognized.contains("restart") ||
-            recognized.contains("renew")) {
-          isCommand = true;
+        for (var word in commandWords) {
+          if (recognized.contains(word)) {
+            isCommand = true;
+            break;
+          }
+        }
+        // Если результат ровно равен одному из игнорируемых слов, то это не команда.
+        List<String> ignoreWords = [
+          "minute",
+          "minutes",
+          "seconds",
+          "timer",
+          "zero",
+        ];
+        if (ignoreWords.contains(recognized)) {
+          isCommand = false;
         }
         _controller.add(
           VoiceCommandResult(text: recognized, isCommand: isCommand),
@@ -182,7 +206,7 @@ class TimerPageState extends State<TimerPage> {
   bool voiceControlEnabled = true;
   bool voiceRecognitionActive = false;
 
-  // Для отображения распознанного текста под иконкой.
+  // Для отображения распознанного текста под иконкой (фиксированное место).
   String? _displayedVoiceText;
   bool _displayedVoiceIsCommand = false;
   Timer? _clearVoiceTextTimer;
@@ -259,7 +283,7 @@ class TimerPageState extends State<TimerPage> {
   }
 
   // Функция для форматирования интервальных объявлений.
-  // Если прошло ровно целое число минут (секунды == 0), возвращает только минуты,
+  // Если прошло ровно целое число минут (секунды == 0) и не 0, возвращает только минуты,
   // иначе – минуты и секунды.
   String _formatIntervalAnnouncement(Duration duration) {
     int totalSeconds = duration.inSeconds;
@@ -322,7 +346,8 @@ class TimerPageState extends State<TimerPage> {
         commandText.contains("clear") ||
         commandText.contains("restart") ||
         commandText.contains("renew")) {
-      flutterTts.speak("Timer reset");
+      // Изменяем голосовое объявление при сбросе.
+      flutterTts.speak("Timer in zero");
       setState(() {
         isActive = false;
         _accumulated = Duration.zero;
@@ -427,7 +452,7 @@ class TimerPageState extends State<TimerPage> {
                     foregroundColor: Colors.white,
                   ),
                   onPressed: () {
-                    flutterTts.speak('Timer reset');
+                    flutterTts.speak('Timer in zero');
                     setState(() {
                       isActive = false;
                       _accumulated = Duration.zero;
