@@ -36,7 +36,7 @@ class VoiceCommandService {
   ];
 
   // Список слов, которые будут распознаны, но не вызовут реакцию.
-  // Здесь можно дополнять новые слова, если потребуется.
+  // Здесь можно дополнять новые слова по необходимости.
   static const List<String> ignoreWords = [
     "minute",
     "minutes",
@@ -49,6 +49,15 @@ class VoiceCommandService {
     "thirty",
     "forty",
     "fifty",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
   ];
 
   // grammarList – объединение commandWords и ignoreWords.
@@ -515,6 +524,8 @@ class SettingsPageState extends State<SettingsPage> {
       const DropdownMenuItem(value: 20, child: Text("20 Seconds")),
       const DropdownMenuItem(value: 30, child: Text("30 Seconds")),
       const DropdownMenuItem(value: 60, child: Text("1 Minute")),
+      const DropdownMenuItem(value: 300, child: Text("5 Minutes")),
+      const DropdownMenuItem(value: 600, child: Text("10 Minutes")),
     ];
     return Scaffold(
       appBar: PreferredSize(
