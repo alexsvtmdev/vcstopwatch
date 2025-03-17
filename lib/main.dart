@@ -72,6 +72,7 @@ class VoiceCommandService {
     "thirty",
     "forty",
     "fifty",
+    "circle", // добавлено слово "circle"
   ];
 
   // grammarList – объединение commandWords и ignoreWords.
@@ -333,6 +334,8 @@ class TimerPageState extends State<TimerPage> {
       Duration currentLap = DateTime.now().difference(_lapStartTime!);
       Duration overall = elapsed;
       int lapNumber = _lapRecords.length + 1;
+      // Для голосового объявления используем "circle" и выводим номер без ведущих нулей.
+      flutterTts.speak("circle ${lapNumber}");
       LapRecord lapRecord = LapRecord(
         lapNumber: lapNumber,
         lapTime: currentLap,
@@ -340,9 +343,8 @@ class TimerPageState extends State<TimerPage> {
       );
       _lapRecords.insert(0, lapRecord);
       _lapStartTime = DateTime.now();
-      flutterTts.speak("Lap ${lapNumber.toString().padLeft(2, '0')}");
       developer.log(
-        "Lap recorded: Lap ${lapNumber.toString().padLeft(2, '0')}, lap time: $currentLap, overall: $overall",
+        "Lap recorded: Circle ${lapNumber}, lap time: $currentLap, overall: $overall",
         name: "TimerPage",
       );
       setState(() {});
@@ -431,13 +433,12 @@ class TimerPageState extends State<TimerPage> {
   }
 
   Widget _buildLapTable() {
-    return Container(
-      height: 200,
+    return Expanded(
       child: SingleChildScrollView(
         child: Column(
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.symmetric(vertical: 6),
               decoration: const BoxDecoration(
                 border: Border(
                   bottom: BorderSide(color: Colors.white, width: 1),
@@ -449,21 +450,21 @@ class TimerPageState extends State<TimerPage> {
                   Expanded(
                     child: Text(
                       "Lap",
-                      style: TextStyle(fontSize: 12),
+                      style: TextStyle(fontSize: 14),
                       textAlign: TextAlign.center,
                     ),
                   ),
                   Expanded(
                     child: Text(
                       "Lap times",
-                      style: TextStyle(fontSize: 12),
+                      style: TextStyle(fontSize: 14),
                       textAlign: TextAlign.center,
                     ),
                   ),
                   Expanded(
                     child: Text(
                       "Overall time",
-                      style: TextStyle(fontSize: 12),
+                      style: TextStyle(fontSize: 14),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -481,22 +482,22 @@ class TimerPageState extends State<TimerPage> {
                   children: [
                     Expanded(
                       child: Text(
-                        lap.lapNumber.toString().padLeft(2, '0'),
-                        style: const TextStyle(fontSize: 12),
+                        lap.lapNumber.toString(),
+                        style: const TextStyle(fontSize: 14),
                         textAlign: TextAlign.center,
                       ),
                     ),
                     Expanded(
                       child: Text(
                         _formatTime(lap.lapTime),
-                        style: const TextStyle(fontSize: 12),
+                        style: const TextStyle(fontSize: 14),
                         textAlign: TextAlign.center,
                       ),
                     ),
                     Expanded(
                       child: Text(
                         _formatTime(lap.overallTime),
-                        style: const TextStyle(fontSize: 12),
+                        style: const TextStyle(fontSize: 14),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -517,7 +518,7 @@ class TimerPageState extends State<TimerPage> {
         style: ElevatedButton.styleFrom(
           minimumSize: const Size(150, 60),
           shape: const StadiumBorder(),
-          backgroundColor: Colors.green,
+          backgroundColor: Colors.blue, // Lap button: синяя
           foregroundColor: Colors.white,
         ),
         onPressed: _handleLap,
@@ -529,7 +530,7 @@ class TimerPageState extends State<TimerPage> {
           style: ElevatedButton.styleFrom(
             minimumSize: const Size(150, 60),
             shape: const StadiumBorder(),
-            backgroundColor: Colors.blueAccent,
+            backgroundColor: Colors.red, // Reset button: красная
             foregroundColor: Colors.white,
           ),
           onPressed: _handleReset,
@@ -540,7 +541,7 @@ class TimerPageState extends State<TimerPage> {
           style: ElevatedButton.styleFrom(
             minimumSize: const Size(150, 60),
             shape: const StadiumBorder(),
-            backgroundColor: Colors.grey,
+            backgroundColor: Colors.grey, // неактивная кнопка
             foregroundColor: Colors.white,
           ),
           onPressed: null,
@@ -583,52 +584,91 @@ class TimerPageState extends State<TimerPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // Верхняя группа: часы, lap timer, индикатор и распознанный текст, таблица кругов.
-            Column(
-              children: [
-                Text(
-                  formattedTime,
-                  style: const TextStyle(fontSize: 80, color: Colors.white),
-                ),
-                const SizedBox(height: 10),
-                if (isActive && _lapStartTime != null)
-                  Text(
-                    "Lap: ${_formatTime(DateTime.now().difference(_lapStartTime!))}",
-                    style: const TextStyle(fontSize: 40, color: Colors.white70),
-                  ),
-                const SizedBox(height: 20),
-                Icon(
-                  voiceRecognitionActive ? Icons.mic : Icons.mic_off,
-                  color: voiceRecognitionActive ? Colors.green : Colors.red,
-                  size: 40,
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  height: 20,
+            // Верхняя группа.
+            _lapRecords.isEmpty
+                ? Expanded(
+                  flex: 3,
                   child: Center(
                     child: Text(
-                      _displayedVoiceText ?? " ",
-                      style: TextStyle(
-                        fontSize: 16,
-                        color:
-                            _displayedVoiceIsCommand
-                                ? Colors.green
-                                : Colors.orange,
-                        fontWeight:
-                            _displayedVoiceIsCommand
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                      ),
+                      formattedTime,
+                      style: const TextStyle(fontSize: 80, color: Colors.white),
+                    ),
+                  ),
+                )
+                : Expanded(
+                  flex: 2,
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: Text(
+                      formattedTime,
+                      style: const TextStyle(fontSize: 80, color: Colors.white),
                     ),
                   ),
                 ),
-                if (_lapRecords.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  _buildLapTable(),
-                ],
-              ],
-            ),
-            // Нижняя группа: кнопки управления таймером.
+            if (_lapRecords.isNotEmpty) ...[
+              if (isActive && _lapStartTime != null)
+                Text(
+                  _formatTime(DateTime.now().difference(_lapStartTime!)),
+                  style: const TextStyle(fontSize: 40, color: Colors.white70),
+                ),
+              const SizedBox(height: 10),
+              Icon(
+                voiceRecognitionActive ? Icons.mic : Icons.mic_off,
+                color: voiceRecognitionActive ? Colors.green : Colors.red,
+                size: 40,
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 20,
+                child: Center(
+                  child: Text(
+                    _displayedVoiceText ?? " ",
+                    style: TextStyle(
+                      fontSize: 16,
+                      color:
+                          _displayedVoiceIsCommand
+                              ? Colors.green
+                              : Colors.orange,
+                      fontWeight:
+                          _displayedVoiceIsCommand
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              // Таблица кругов, занимающая оставшееся место между верхней группой и кнопками.
+              _buildLapTable(),
+            ] else ...[
+              const SizedBox(height: 20),
+              Icon(
+                voiceRecognitionActive ? Icons.mic : Icons.mic_off,
+                color: voiceRecognitionActive ? Colors.green : Colors.red,
+                size: 40,
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 20,
+                child: Center(
+                  child: Text(
+                    _displayedVoiceText ?? " ",
+                    style: TextStyle(
+                      fontSize: 16,
+                      color:
+                          _displayedVoiceIsCommand
+                              ? Colors.green
+                              : Colors.orange,
+                      fontWeight:
+                          _displayedVoiceIsCommand
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            // Нижняя группа: кнопки.
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -638,7 +678,8 @@ class TimerPageState extends State<TimerPage> {
                   style: ElevatedButton.styleFrom(
                     minimumSize: const Size(150, 60),
                     shape: const StadiumBorder(),
-                    backgroundColor: Colors.green,
+                    backgroundColor:
+                        Colors.green, // кнопка Start/Resume – зеленая.
                     foregroundColor: Colors.white,
                   ),
                   onPressed: () {
@@ -797,10 +838,3 @@ class SettingsPageState extends State<SettingsPage> {
     );
   }
 }
- /* 
-  В этом примере мы создали простое приложение таймера, которое можно управлять голосом. Пользователь может запустить, остановить, сбросить таймер и делать круги с помощью голосовых команд. 
-  Важно:  Вам нужно будет добавить разрешение на использование микрофона в вашем Android-приложении. Для этого добавьте следующую строку в ваш  AndroidManifest.xml : 
-  <uses-permission android:name="android.permission.RECORD_AUDIO" /> 
-  Вот как это выглядит: 
-  <?xml version="1.0" encoding="utf-8"?>
-  */
