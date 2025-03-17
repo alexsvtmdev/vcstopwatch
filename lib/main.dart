@@ -27,7 +27,7 @@ class VoiceCommandService {
       final modelDescription = modelsList.firstWhere(
         (m) => m.name == modelName,
       );
-      // Здесь можно заменить загрузку по сети на локальную модель (из assets)
+      // Здесь можно заменить загрузку по сети на локальную модель (если модель положена в assets)
       final modelPath = await _modelLoader.loadFromNetwork(
         modelDescription.url,
       );
@@ -142,22 +142,22 @@ class TimerPageState extends State<TimerPage> {
     super.initState();
     _loadSettings();
     flutterTts.setVolume(volume);
-    // Используем UI таймер для обновления отображения времени (каждые 50 мс)
+    // UI таймер, который обновляет отображение каждые 50 мс
     _uiTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
       if (isActive && _startTime != null) {
         setState(() {
           _elapsed = DateTime.now().difference(_startTime!);
         });
-        // Если время кратно интервалу, произносим время
         int totalSeconds = _elapsed.inSeconds;
+        // Если время кратно интервалу (проверяем только при изменениях)
         if (totalSeconds > 0 && totalSeconds % intervalSeconds == 0) {
-          String announcement = _formatTime(_elapsed);
+          String announcement = _formatAnnouncement(_elapsed);
           flutterTts.speak(announcement);
           developer.log("Announced time: $announcement", name: "TimerPage");
         }
       }
     });
-    // Инициализируем сервис голосовых команд
+    // Инициализация сервиса голосовых команд
     voiceService = VoiceCommandService();
     voiceService.initialize().then((_) {
       if (voiceControlEnabled) {
@@ -165,9 +165,12 @@ class TimerPageState extends State<TimerPage> {
           setState(() {
             voiceRecognitionActive = true;
           });
+          developer.log(
+            "Voice recognition started automatically.",
+            name: "TimerPage",
+          );
         });
       }
-      // Подписываемся на поток команд
       _voiceSub = voiceService.commandStream.listen((command) {
         developer.log("Received voice command: $command", name: "TimerPage");
         _handleVoiceCommand(command);
@@ -175,10 +178,18 @@ class TimerPageState extends State<TimerPage> {
     });
   }
 
-  String _formatTime(Duration duration) {
+  String _formatAnnouncement(Duration duration) {
     int minutes = duration.inMinutes;
     int seconds = duration.inSeconds % 60;
     return "$minutes minute${minutes != 1 ? "s" : ""} and $seconds second${seconds != 1 ? "s" : ""}";
+  }
+
+  // Форматирование времени с сотыми долями секунды: MM:SS:CS
+  String _formatTime(Duration duration) {
+    int minutes = duration.inMinutes;
+    int seconds = duration.inSeconds % 60;
+    int centiseconds = ((duration.inMilliseconds % 1000) / 10).floor();
+    return "${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}:${centiseconds.toString().padLeft(2, '0')}";
   }
 
   void _handleVoiceCommand(String command) {
@@ -238,9 +249,7 @@ class TimerPageState extends State<TimerPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Форматируем время в виде MM:SS
-    String formattedTime =
-        "${_elapsed.inMinutes.toString().padLeft(2, '0')}:${(_elapsed.inSeconds % 60).toString().padLeft(2, '0')}";
+    String formattedTime = _formatTime(_elapsed);
     return Scaffold(
       appBar: AppBar(
         title: const Text('VoiceControl Timer'),
@@ -261,26 +270,21 @@ class TimerPageState extends State<TimerPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Отображаем время и индикатор работы распознавания
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  formattedTime,
-                  style: const TextStyle(fontSize: 80, color: Colors.white),
-                ),
-                const SizedBox(width: 20),
-                Icon(
-                  voiceRecognitionActive ? Icons.mic : Icons.mic_off,
-                  color: voiceRecognitionActive ? Colors.green : Colors.red,
-                  size: 40,
-                ),
-              ],
+            Text(
+              formattedTime,
+              style: const TextStyle(fontSize: 80, color: Colors.white),
+            ),
+            const SizedBox(height: 20),
+            // Индикатор состояния распознавания под часами
+            Icon(
+              voiceRecognitionActive ? Icons.mic : Icons.mic_off,
+              color: voiceRecognitionActive ? Colors.green : Colors.red,
+              size: 40,
             ),
             const SizedBox(height: 40),
-            // Кнопки управления таймером (ручное управление)
+            // Ручное управление таймером
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
@@ -300,6 +304,7 @@ class TimerPageState extends State<TimerPage> {
                   },
                   child: const Text('Reset'),
                 ),
+                const SizedBox(width: 20),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     minimumSize: const Size(150, 60),
@@ -423,21 +428,17 @@ class SettingsPageState extends State<SettingsPage> {
                 setState(() {
                   widget.state.voiceControlEnabled = value;
                   widget.state._saveSettings();
-                  if (value && !widget.state.voiceRecognitionActive) {
+                  // Обновляем состояние индикатора голосового распознавания независимо от службы
+                  widget.state.voiceRecognitionActive = value;
+                  if (value) {
                     widget.state.voiceService.startListening().then((_) {
-                      setState(() {
-                        widget.state.voiceRecognitionActive = true;
-                      });
                       developer.log(
                         "Voice recognition enabled via settings.",
                         name: "SettingsPage",
                       );
                     });
-                  } else if (!value && widget.state.voiceRecognitionActive) {
+                  } else {
                     widget.state.voiceService.stopListening().then((_) {
-                      setState(() {
-                        widget.state.voiceRecognitionActive = false;
-                      });
                       developer.log(
                         "Voice recognition disabled via settings.",
                         name: "SettingsPage",
