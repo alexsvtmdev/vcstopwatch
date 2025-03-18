@@ -38,8 +38,10 @@ class VoiceCommandService {
   // Список слов, по которым реагировать.
   static const List<String> commandWords = [
     "start",
+    "go",
     "begin",
     "stop",
+    "end",
     "pause",
     "reset",
     "clear",
@@ -368,6 +370,7 @@ class TimerPageState extends State<TimerPage> {
   void _handleVoiceCommand(String commandText) {
     developer.log("Voice command received: $commandText", name: "TimerPage");
     if (commandText.contains("start") ||
+        commandText.contains("go") ||
         commandText.contains("begin") ||
         commandText.contains("resume")) {
       if (!isActive) {
@@ -378,11 +381,13 @@ class TimerPageState extends State<TimerPage> {
           _lapStartTime = DateTime.now();
         });
         developer.log(
-          "Voice command executed: start/begin/resume",
+          "Voice command executed: start/go/begin/resume",
           name: "TimerPage",
         );
       }
-    } else if (commandText.contains("stop") || commandText.contains("pause")) {
+    } else if (commandText.contains("stop") ||
+        commandText.contains("end") ||
+        commandText.contains("pause")) {
       if (isActive && _startTime != null) {
         Duration currentRun = DateTime.now().difference(_startTime!);
         Duration total = _accumulated + currentRun;
@@ -393,7 +398,10 @@ class TimerPageState extends State<TimerPage> {
           _accumulated = total;
           _startTime = null;
         });
-        developer.log("Voice command executed: stop/pause", name: "TimerPage");
+        developer.log(
+          "Voice command executed: stop/go/pause",
+          name: "TimerPage",
+        );
       }
     } else if (commandText.contains("lap") || commandText.contains("split")) {
       if (isActive && _lapStartTime != null) {
@@ -884,10 +892,10 @@ class TimerPageState extends State<TimerPage> {
                   ),
                   SizedBox(height: 8),
                   Text(
-                    "- Start / Begin / Resume: Start or resume the stopwatch.",
+                    "- Start / Go / Begin / Resume: Start or resume the stopwatch.",
                   ),
                   Text(
-                    "- Stop / Pause: Stop the stopwatch and announce the elapsed time.",
+                    "- Stop / End / Pause: Stop the stopwatch and announce the elapsed time.",
                   ),
                   Text(
                     "- Lap / Split: Record the current lap time and overall time.",
