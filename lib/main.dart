@@ -594,7 +594,8 @@ class TimerPageState extends State<TimerPage> {
         mainAxisSize: MainAxisSize.min,
         children: [
           upperGroup,
-          const SizedBox(height: 20),
+          // Уменьшено расстояние между основными часами и микрофоном: раньше было 20, теперь 0.
+          const SizedBox(height: 0),
           Icon(
             voiceRecognitionActive ? Icons.mic : Icons.mic_off,
             color: voiceRecognitionActive ? Colors.green : Colors.red,
@@ -633,7 +634,8 @@ class TimerPageState extends State<TimerPage> {
               _formatTime(DateTime.now().difference(_lapStartTime!)),
               style: const TextStyle(fontSize: 40, color: Colors.white70),
             ),
-          const SizedBox(height: 20),
+          // Уменьшено расстояние между основными часами и микрофоном: вместо 20 теперь 0.
+          const SizedBox(height: 0),
           Icon(
             voiceRecognitionActive ? Icons.mic : Icons.mic_off,
             color: voiceRecognitionActive ? Colors.green : Colors.red,
@@ -689,7 +691,6 @@ class TimerPageState extends State<TimerPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // Верхняя группа: если кругов нет, часы занимают 33% экрана; иначе – выравниваются по верхнему краю.
             Expanded(child: upperGroup),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
