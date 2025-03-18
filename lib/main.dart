@@ -435,6 +435,56 @@ class TimerPageState extends State<TimerPage> {
     await prefs.setBool('voiceControlEnabled', voiceControlEnabled);
   }
 
+  // В ландшафтном режиме с записями фиксированно располагаем кнопки в нижней области.
+  Widget _buildFixedButtons() {
+    return Container(
+      height: 80, // фиксированная высота для кнопок
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _buildLapOrResetButton(),
+          const SizedBox(width: 20),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(150, 60),
+              shape: const StadiumBorder(),
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              if (!isActive) {
+                flutterTts.speak('Stopwatch started');
+                setState(() {
+                  isActive = true;
+                  _startTime = DateTime.now();
+                  _lapStartTime = DateTime.now();
+                });
+                developer.log("Manual: Stopwatch started", name: "TimerPage");
+              } else if (isActive && _startTime != null) {
+                Duration currentRun = DateTime.now().difference(_startTime!);
+                Duration total = _accumulated + currentRun;
+                final formatted = _formatAnnouncement(total);
+                flutterTts.speak("completed $formatted");
+                setState(() {
+                  isActive = false;
+                  _accumulated = total;
+                  _startTime = null;
+                });
+                developer.log("Manual: Stopwatch stopped", name: "TimerPage");
+              }
+            },
+            child: Text(
+              isActive
+                  ? 'Stop'
+                  : (elapsed > Duration.zero ? 'Resume' : 'Start'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildLapTable() {
     return Expanded(
       child: Column(
@@ -578,16 +628,15 @@ class TimerPageState extends State<TimerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final screenHeight = MediaQuery.of(context).size.height;
     final orientation = MediaQuery.of(context).orientation;
     Widget bodyContent;
 
-    // Если портретный режим или нет записей, используем одноколоночный макет.
     if (orientation == Orientation.portrait || _lapRecords.isEmpty) {
+      // Одноколоночный макет (как в портретном режиме или если нет записей)
       Widget upperGroup;
       if (_lapRecords.isEmpty) {
         upperGroup = Container(
-          height: screenHeight * 0.33,
+          height: MediaQuery.of(context).size.height * 0.33,
           alignment: Alignment.bottomCenter,
           child: Text(
             _formatTime(elapsed),
@@ -723,24 +772,26 @@ class TimerPageState extends State<TimerPage> {
         ],
       );
     } else {
-      // Ландшафтный режим и есть записи: делим экран на две колонки.
-      Widget upperContent = Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      // Ландшафтный режим с записями: делим экран на две колонки.
+      // Левая колонка: все элементы кроме таблицы, с уменьшенными размерами.
+      Widget leftColumn = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Подтягиваем часы к верхнему краю, уменьшаем размер шрифта.
           Text(
             _formatTime(elapsed),
-            style: const TextStyle(fontSize: 80, color: Colors.white),
+            style: const TextStyle(fontSize: 60, color: Colors.white),
           ),
           if (isActive && _lapStartTime != null)
             Text(
               _formatTime(DateTime.now().difference(_lapStartTime!)),
-              style: const TextStyle(fontSize: 40, color: Colors.white70),
+              style: const TextStyle(fontSize: 30, color: Colors.white70),
             ),
           const SizedBox(height: 0),
           Icon(
             voiceRecognitionActive ? Icons.mic : Icons.mic_off,
             color: voiceRecognitionActive ? Colors.green : Colors.red,
-            size: 40,
+            size: 30,
           ),
           const SizedBox(height: 10),
           SizedBox(
@@ -749,7 +800,7 @@ class TimerPageState extends State<TimerPage> {
               child: Text(
                 _displayedVoiceText ?? " ",
                 style: TextStyle(
-                  fontSize: 16,
+                  fontSize: 14,
                   color:
                       _displayedVoiceIsCommand ? Colors.green : Colors.orange,
                   fontWeight:
@@ -760,14 +811,18 @@ class TimerPageState extends State<TimerPage> {
               ),
             ),
           ),
+          // Заполняем оставшееся пространство, чтобы кнопки были фиксированы внизу.
+          const Spacer(),
+          _buildFixedButtons(),
         ],
       );
-      Widget lapTable = _buildLapTable();
+      // Правая колонка – таблица кругов.
+      Widget rightColumn = _buildLapTable();
       bodyContent = Row(
         children: [
-          Expanded(child: upperContent),
+          Expanded(child: leftColumn),
           const SizedBox(width: 20),
-          Expanded(child: lapTable),
+          Expanded(child: rightColumn),
         ],
       );
     }
@@ -801,6 +856,7 @@ class TimerPageState extends State<TimerPage> {
     );
   }
 
+  // Единственная реализация _showHelpDialog.
   void _showHelpDialog() {
     showDialog(
       context: context,
