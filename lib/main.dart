@@ -653,7 +653,7 @@ class TimerPageState extends State<TimerPage> {
               color: voiceRecognitionActive ? Colors.green : Colors.red,
               size: 40,
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8), // уменьшили с 10 до 8 пикселей
             SizedBox(
               height: 20,
               child: Center(
@@ -785,7 +785,11 @@ class TimerPageState extends State<TimerPage> {
           if (isActive && _lapStartTime != null)
             Text(
               _formatTime(DateTime.now().difference(_lapStartTime!)),
-              style: const TextStyle(fontSize: 30, color: Colors.white70),
+              style: const TextStyle(
+                fontSize: 30,
+                color: Colors.white70,
+                height: 0.8,
+              ),
             ),
           const SizedBox(height: 0),
           Icon(
@@ -793,7 +797,8 @@ class TimerPageState extends State<TimerPage> {
             color: voiceRecognitionActive ? Colors.green : Colors.red,
             size: 30,
           ),
-          const SizedBox(height: 10),
+          // Если нужно уменьшить отступ между иконкой и следующим элементом, можно изменить SizedBox:
+          const SizedBox(height: 8), // вместо 10 пикселей
           SizedBox(
             height: 20,
             child: Center(
