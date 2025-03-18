@@ -578,55 +578,157 @@ class TimerPageState extends State<TimerPage> {
 
   @override
   Widget build(BuildContext context) {
-    String formattedTime = _formatTime(elapsed);
     final screenHeight = MediaQuery.of(context).size.height;
-    Widget upperGroup;
-    if (_lapRecords.isEmpty) {
-      upperGroup = Container(
-        height: screenHeight * 0.33,
-        alignment: Alignment.bottomCenter,
-        child: Text(
-          formattedTime,
-          style: const TextStyle(fontSize: 80, color: Colors.white),
-        ),
-      );
-      upperGroup = Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          upperGroup,
-          // Уменьшено расстояние между основными часами и микрофоном: раньше было 20, теперь 0.
-          const SizedBox(height: 0),
-          Icon(
-            voiceRecognitionActive ? Icons.mic : Icons.mic_off,
-            color: voiceRecognitionActive ? Colors.green : Colors.red,
-            size: 40,
+    final orientation = MediaQuery.of(context).orientation;
+    Widget bodyContent;
+
+    // Если портретный режим или нет записей, используем одноколоночный макет.
+    if (orientation == Orientation.portrait || _lapRecords.isEmpty) {
+      Widget upperGroup;
+      if (_lapRecords.isEmpty) {
+        upperGroup = Container(
+          height: screenHeight * 0.33,
+          alignment: Alignment.bottomCenter,
+          child: Text(
+            _formatTime(elapsed),
+            style: const TextStyle(fontSize: 80, color: Colors.white),
           ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 20,
-            child: Center(
-              child: Text(
-                _displayedVoiceText ?? " ",
-                style: TextStyle(
-                  fontSize: 16,
-                  color:
-                      _displayedVoiceIsCommand ? Colors.green : Colors.orange,
-                  fontWeight:
-                      _displayedVoiceIsCommand
-                          ? FontWeight.bold
-                          : FontWeight.normal,
+        );
+        upperGroup = Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            upperGroup,
+            const SizedBox(height: 0),
+            Icon(
+              voiceRecognitionActive ? Icons.mic : Icons.mic_off,
+              color: voiceRecognitionActive ? Colors.green : Colors.red,
+              size: 40,
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 20,
+              child: Center(
+                child: Text(
+                  _displayedVoiceText ?? " ",
+                  style: TextStyle(
+                    fontSize: 16,
+                    color:
+                        _displayedVoiceIsCommand ? Colors.green : Colors.orange,
+                    fontWeight:
+                        _displayedVoiceIsCommand
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                  ),
                 ),
               ),
             ),
+          ],
+        );
+      } else {
+        upperGroup = Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              _formatTime(elapsed),
+              style: const TextStyle(fontSize: 80, color: Colors.white),
+            ),
+            if (isActive && _lapStartTime != null)
+              Text(
+                _formatTime(DateTime.now().difference(_lapStartTime!)),
+                style: const TextStyle(fontSize: 40, color: Colors.white70),
+              ),
+            const SizedBox(height: 0),
+            Icon(
+              voiceRecognitionActive ? Icons.mic : Icons.mic_off,
+              color: voiceRecognitionActive ? Colors.green : Colors.red,
+              size: 40,
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 20,
+              child: Center(
+                child: Text(
+                  _displayedVoiceText ?? " ",
+                  style: TextStyle(
+                    fontSize: 16,
+                    color:
+                        _displayedVoiceIsCommand ? Colors.green : Colors.orange,
+                    fontWeight:
+                        _displayedVoiceIsCommand
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            _buildLapTable(),
+          ],
+        );
+      }
+      bodyContent = Column(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(child: upperGroup),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildLapOrResetButton(),
+              const SizedBox(width: 20),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(150, 60),
+                  shape: const StadiumBorder(),
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () {
+                  if (!isActive) {
+                    flutterTts.speak('Stopwatch started');
+                    setState(() {
+                      isActive = true;
+                      _startTime = DateTime.now();
+                      _lapStartTime = DateTime.now();
+                    });
+                    developer.log(
+                      "Manual: Stopwatch started",
+                      name: "TimerPage",
+                    );
+                  } else if (isActive && _startTime != null) {
+                    Duration currentRun = DateTime.now().difference(
+                      _startTime!,
+                    );
+                    Duration total = _accumulated + currentRun;
+                    final formatted = _formatAnnouncement(total);
+                    flutterTts.speak("completed $formatted");
+                    setState(() {
+                      isActive = false;
+                      _accumulated = total;
+                      _startTime = null;
+                    });
+                    developer.log(
+                      "Manual: Stopwatch stopped",
+                      name: "TimerPage",
+                    );
+                  }
+                },
+                child: Text(
+                  isActive
+                      ? 'Stop'
+                      : (elapsed > Duration.zero ? 'Resume' : 'Start'),
+                ),
+              ),
+            ],
           ),
         ],
       );
     } else {
-      upperGroup = Column(
+      // Ландшафтный режим и есть записи: делим экран на две колонки.
+      Widget upperContent = Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(
-            formattedTime,
+            _formatTime(elapsed),
             style: const TextStyle(fontSize: 80, color: Colors.white),
           ),
           if (isActive && _lapStartTime != null)
@@ -634,7 +736,6 @@ class TimerPageState extends State<TimerPage> {
               _formatTime(DateTime.now().difference(_lapStartTime!)),
               style: const TextStyle(fontSize: 40, color: Colors.white70),
             ),
-          // Уменьшено расстояние между основными часами и микрофоном: вместо 20 теперь 0.
           const SizedBox(height: 0),
           Icon(
             voiceRecognitionActive ? Icons.mic : Icons.mic_off,
@@ -659,11 +760,18 @@ class TimerPageState extends State<TimerPage> {
               ),
             ),
           ),
-          const SizedBox(height: 10),
-          _buildLapTable(),
+        ],
+      );
+      Widget lapTable = _buildLapTable();
+      bodyContent = Row(
+        children: [
+          Expanded(child: upperContent),
+          const SizedBox(width: 20),
+          Expanded(child: lapTable),
         ],
       );
     }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('VoiceControl Stopwatch'),
@@ -688,67 +796,11 @@ class TimerPageState extends State<TimerPage> {
       backgroundColor: const Color(0xFF001F3F),
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(child: upperGroup),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _buildLapOrResetButton(),
-                const SizedBox(width: 20),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    minimumSize: const Size(150, 60),
-                    shape: const StadiumBorder(),
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: () {
-                    if (!isActive) {
-                      flutterTts.speak('Stopwatch started');
-                      setState(() {
-                        isActive = true;
-                        _startTime = DateTime.now();
-                        _lapStartTime = DateTime.now();
-                      });
-                      developer.log(
-                        "Manual: Stopwatch started",
-                        name: "TimerPage",
-                      );
-                    } else if (isActive && _startTime != null) {
-                      Duration currentRun = DateTime.now().difference(
-                        _startTime!,
-                      );
-                      Duration total = _accumulated + currentRun;
-                      final formatted = _formatAnnouncement(total);
-                      flutterTts.speak("completed $formatted");
-                      setState(() {
-                        isActive = false;
-                        _accumulated = total;
-                        _startTime = null;
-                      });
-                      developer.log(
-                        "Manual: Stopwatch stopped",
-                        name: "TimerPage",
-                      );
-                    }
-                  },
-                  child: Text(
-                    isActive
-                        ? 'Stop'
-                        : (elapsed > Duration.zero ? 'Resume' : 'Start'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+        child: bodyContent,
       ),
     );
   }
 
-  // Единственная реализация _showHelpDialog.
   void _showHelpDialog() {
     showDialog(
       context: context,
