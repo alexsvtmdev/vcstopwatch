@@ -30,10 +30,17 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/images/icon.png"
+  image_path: "assets/images/icon_ios.png" # ← иконка без прозрачности для iOS
+  adaptive_icon_foreground: "assets/images/foreground.png" # ← прозрачная
+  adaptive_icon_background: "assets/images/background.png" # ← непрозрачная
+  remove_alpha_ios: true # ← автоматически удалит прозрачность для iOS, даже если забудешь
 
 flutter_native_splash:
-  image: assets/images/splash.png
-  color: "#ffffff" # здесь укажи цвет фона (желательно совпадающий с фоном splash.png)
   android: true
   ios: true
+  android_12:
+    image: assets/images/foreground.png
+    icon_background_color: "#39B8F1" # цвет фона, соответствующий твоему background.png
+    color: "#39B8F1"
+  color: "#39B8F1"
+  image: assets/images/foreground.png
