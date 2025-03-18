@@ -385,9 +385,7 @@ class TimerPageState extends State<TimerPage> {
           name: "TimerPage",
         );
       }
-    } else if (commandText.contains("stop") ||
-        commandText.contains("end") ||
-        commandText.contains("pause")) {
+    } else if (commandText.contains("stop") || commandText.contains("pause")) {
       if (isActive && _startTime != null) {
         Duration currentRun = DateTime.now().difference(_startTime!);
         Duration total = _accumulated + currentRun;
@@ -398,10 +396,7 @@ class TimerPageState extends State<TimerPage> {
           _accumulated = total;
           _startTime = null;
         });
-        developer.log(
-          "Voice command executed: stop/go/pause",
-          name: "TimerPage",
-        );
+        developer.log("Voice command executed: stop/pause", name: "TimerPage");
       }
     } else if (commandText.contains("lap") || commandText.contains("split")) {
       if (isActive && _lapStartTime != null) {
@@ -895,7 +890,7 @@ class TimerPageState extends State<TimerPage> {
                     "- Start / Go / Begin / Resume: Start or resume the stopwatch.",
                   ),
                   Text(
-                    "- Stop / End / Pause: Stop the stopwatch and announce the elapsed time.",
+                    "- Stop / Pause: Stop the stopwatch and announce the elapsed time.",
                   ),
                   Text(
                     "- Lap / Split: Record the current lap time and overall time.",
