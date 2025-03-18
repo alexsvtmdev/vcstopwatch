@@ -775,7 +775,7 @@ class TimerPageState extends State<TimerPage> {
       // Ландшафтный режим с записями: делим экран на две колонки.
       // Левая колонка: все элементы кроме таблицы, с уменьшенными размерами.
       Widget leftColumn = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // Подтягиваем часы к верхнему краю, уменьшаем размер шрифта.
           Text(
