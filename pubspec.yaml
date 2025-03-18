@@ -18,8 +18,22 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.3.10
 
 flutter:
   uses-material-design: true
   assets:
     - assets/models/vosk-model-small-en-us-0.15/
+    - assets/images/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/icon.png"
+
+flutter_native_splash:
+  image: assets/images/splash.png
+  color: "#ffffff" # здесь укажи цвет фона (желательно совпадающий с фоном splash.png)
+  android: true
+  ios: true
