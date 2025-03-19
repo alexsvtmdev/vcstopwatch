@@ -9,7 +9,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.voice_control_timer"
+    namespace = "com.libervibe.voice_control_timer"
     compileSdk = 35
     ndkVersion = "27.0.12077973"
 
@@ -23,7 +23,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.voice_control_timer"
+        applicationId = "com.libervibe.voice_control_timer"
         minSdk = 30
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
