@@ -47,3 +47,11 @@ pubspec.lock
 linux/flutter/
 windows/flutter/
 macos/flutter/
+
+# Игнорировать незашифрованные файлы
+android/release-key.jks
+android/key.properties
+
+# Оставляем зашифрованные версии
+!android/release-key.jks.gpg
+!android/key.properties.gpg
