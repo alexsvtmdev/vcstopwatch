@@ -32,22 +32,22 @@ android {
 
     signingConfigs {
         create("release") {
-            val keystorePropertiesFile = File("D:/SynologyDrive/Work/MobileProjects/VoiceControl_Timer/voice_control_timer/android/key.properties")
+            val keystorePropertiesFile = File(rootProject.projectDir, "key.properties")
 
-            println("📂 Проверка key.properties: ${keystorePropertiesFile.absolutePath}")
-            println("✅ Файл существует? ${keystorePropertiesFile.exists()}")
+            println("📂 Checking key.properties at: ${keystorePropertiesFile.absolutePath}")
+            println("✅ File exists? ${keystorePropertiesFile.exists()}")
 
             if (keystorePropertiesFile.exists()) {
                 val keystoreProperties = Properties().apply {
                     load(FileInputStream(keystorePropertiesFile))
                 }
 
-                storeFile = File("D:/SynologyDrive/Work/MobileProjects/VoiceControl_Timer/voice_control_timer/android/release-key.jks")
+                storeFile = File(rootProject.projectDir, "release-key.jks")
                 storePassword = keystoreProperties["storePassword"] as String
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String
             } else {
-                println("⚠️ WARNING: key.properties не найден! Release builds не будут подписаны!")
+                println("⚠️ WARNING: key.properties not found! Release builds will not be signed!")
             }
         }
     }
