@@ -26,8 +26,8 @@ android {
         applicationId = "com.libervibe.voice_control_timer"
         minSdk = 30
         targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        versionCode = 2
+        versionName = "1.0.0"
     }
 
     signingConfigs {
