@@ -1,4 +1,4 @@
-package com.example.voice_control_timer
+package com.libervibe.voice_control_timer
 
 import io.flutter.embedding.android.FlutterActivity
 

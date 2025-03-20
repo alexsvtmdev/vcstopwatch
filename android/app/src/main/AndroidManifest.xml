@@ -3,7 +3,7 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
-        android:label="voice_control_timer"
+        android:label="VoiceControl Stopwatch"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
