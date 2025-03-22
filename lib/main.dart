@@ -272,6 +272,7 @@ class TimerPageState extends State<TimerPage> {
     super.initState();
     requestMicrophonePermission();
     _loadSettings();
+    flutterTts.setLanguage("en-US"); // установили язык на английский
     flutterTts.setVolume(volume);
 
     _uiTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
