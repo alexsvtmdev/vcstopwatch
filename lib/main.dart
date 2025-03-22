@@ -6,6 +6,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vosk_flutter_2/vosk_flutter_2.dart';
+import 'package:permission_handler/permission_handler.dart';
+
+Future<void> requestMicrophonePermission() async {
+  final status = await Permission.microphone.status;
+
+  if (status.isGranted) {
+    developer.log('🎙️ Microphone permission already granted.');
+    return;
+  }
+
+  final result = await Permission.microphone.request();
+
+  if (result == PermissionStatus.granted) {
+    developer.log('✅ Microphone permission granted.');
+  } else {
+    developer.log('❌ Microphone permission not granted: $result');
+  }
+}
 
 /// Класс, представляющий запись круга.
 class LapRecord {
@@ -252,6 +270,7 @@ class TimerPageState extends State<TimerPage> {
   @override
   void initState() {
     super.initState();
+    requestMicrophonePermission();
     _loadSettings();
     flutterTts.setVolume(volume);
 
