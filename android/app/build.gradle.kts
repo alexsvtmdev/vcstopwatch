@@ -9,7 +9,7 @@ plugins {
 }
 
 android {
-    namespace = "com.libervibe.voice_control_timer"
+    namespace = "com.libervibe.vcstopwatch"
     compileSdk = 35
     ndkVersion = "27.0.12077973"
 
@@ -23,10 +23,10 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.libervibe.voice_control_timer"
+        applicationId = "com.libervibe.vcstopwatch"
         minSdk = 30
         targetSdk = flutter.targetSdkVersion
-        versionCode = 4
+        versionCode = 1
         versionName = "1.0.0"
     }
 

@@ -1,0 +1,32 @@
+VC Stopwatch is a modern and intuitive stopwatch app with voice control.
+
+🗣 Voice Commands:
+Start, stop, reset, lap — all hands-free using your voice.
+
+⏱ Spoken Time Intervals:
+The stopwatch can announce elapsed time at customizable intervals and volumes.
+
+📱 Additional Features:
+- Lap tracking
+- Background operation
+- Simple and clean design
+- Works offline
+
+Perfect for workouts, presentations, or any hands-free time tracking.
+
+
+
+
+VoiceControl Stopwatch is a hands-free stopwatch designed for voice-controlled time tracking. It allows you to start, stop, reset, and record lap times using voice commands. You can also enable time announcements at customizable intervals with adjustable volume.
+
+📱 **Key Features:**
+✔ Hands-free operation with voice commands 🗣
+✔ Lap tracking for split times
+✔ Adjustable announcement intervals (every 10 sec, 30 sec, etc.) ⏱
+✔ Customizable speech volume for announcements
+✔ Option to disable voice recognition when not needed
+✔ Simple, intuitive interface
+
+Whether you're working out, cooking, studying, or conducting experiments, VoiceControl Stopwatch provides seamless and precise time tracking with voice control.
+
+Download now and keep track of your time effortlessly!

@@ -1,0 +1,12 @@
+1.0.0
+<en-US>
+Initial release of VoiceControl Stopwatch.
+
+🚀 Features:
+✔ Hands-free stopwatch with voice commands for start/stop/lap/reset
+✔ Adjustable announcement intervals (10 sec, 30 sec, etc.)
+✔ Customizable speech volume for announcements
+✔ Lap tracking for split times
+✔ Option to disable voice recognition
+✔ Simple, intuitive interface
+</en-US>
