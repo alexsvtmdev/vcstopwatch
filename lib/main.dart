@@ -260,7 +260,28 @@ class VoiceCommandService {
 }
 
 void main() {
-  runApp(const MyApp());
+  // Перехватываем ошибки Flutter
+  FlutterError.onError = (FlutterErrorDetails details) {
+    appLog(
+      "FlutterError: ${details.exception}",
+      name: "FlutterError",
+      stackTrace: details.stack,
+    );
+    // Можно также выводить детали в консоль или отправлять на сервер
+  };
+
+  runZonedGuarded(
+    () {
+      runApp(const MyApp());
+    },
+    (error, stackTrace) {
+      appLog(
+        "Unhandled error: $error",
+        name: "runZonedGuarded",
+        stackTrace: stackTrace,
+      );
+    },
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -287,6 +308,10 @@ class TimerPage extends StatefulWidget {
 }
 
 class TimerPageState extends State<TimerPage> {
+  // Объявляем ValueNotifier для статуса загрузки
+  final ValueNotifier<String> loadingStatus = ValueNotifier(
+    "Initializing voice service...",
+  );
   // Определяем переменную currentLanguage как поле класса с значением по умолчанию.
   String currentLanguage = "en-US";
 
@@ -325,11 +350,10 @@ class TimerPageState extends State<TimerPage> {
 
   // Функция показа модального окна загрузки модели.
   Future<void> _showLoadingModelDialog() async {
-    // Получаем удобочитаемое название языка или возвращаем код, если не найдено.
     final languageName = languageNames[currentLanguage] ?? currentLanguage;
-    // Показываем диалог загрузки, но не ждем его завершения.
     showDialog(
-      context: context,
+      context:
+          context, // здесь context доступен, так как метод внутри класса TimerPageState
       barrierDismissible:
           false, // пользователь не может закрыть окно нажатием вне его
       builder:
@@ -362,13 +386,16 @@ class TimerPageState extends State<TimerPage> {
 
     // Используем addPostFrameCallback, чтобы работать с context уже после build().
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Показываем диалог загрузки модели.
+      // Показываем диалог загрузки
       _showLoadingModelDialog();
+
+      // Обновляем статус перед инициализацией модели
+      loadingStatus.value = "Initializing voice service...";
 
       // Выполняем инициализацию модели.
       await voiceService.initialize();
 
-      // После инициализации закрываем диалог.
+      // После завершения инициализации закрываем диалог
       Navigator.of(context).pop();
 
       if (voiceControlEnabled) {
@@ -939,31 +966,57 @@ class TimerPageState extends State<TimerPage> {
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('VoiceControl Stopwatch'),
+    return WillPopScope(
+      onWillPop: () async {
+        final bool exitConfirmed =
+            await showDialog<bool>(
+              context: context,
+              builder:
+                  (BuildContext context) => AlertDialog(
+                    title: const Text("Confirm exit"),
+                    content: const Text("Do you really want to exit the app?"),
+                    actions: <Widget>[
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text("No"),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: const Text("Yes"),
+                      ),
+                    ],
+                  ),
+            ) ??
+            false;
+        return exitConfirmed;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('VoiceControl Stopwatch'),
+          backgroundColor: const Color(0xFF001F3F),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.help_outline),
+              onPressed: _showHelpDialog,
+            ),
+            IconButton(
+              icon: const Icon(Icons.settings),
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (context) => SettingsPage(state: this),
+                );
+              },
+            ),
+          ],
+        ),
         backgroundColor: const Color(0xFF001F3F),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.help_outline),
-            onPressed: _showHelpDialog,
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () {
-              showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                builder: (context) => SettingsPage(state: this),
-              );
-            },
-          ),
-        ],
-      ),
-      backgroundColor: const Color(0xFF001F3F),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
-        child: bodyContent,
+        body: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
+          child:
+              bodyContent, // оставьте ваш существующий UI-контент без изменений
+        ),
       ),
     );
   }
