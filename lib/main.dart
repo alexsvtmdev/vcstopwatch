@@ -13,6 +13,12 @@ import 'package:flutter/foundation.dart';
 // Для продакшена можно установить false, для отладки — true.
 const bool kLoggingEnabled = true;
 
+const Map<String, String> languageNames = {
+  "en-US": "English",
+  "ru-RU": "Русский",
+  // можно добавить и другие
+};
+
 void appLog(
   String message, {
   String name = 'AppLog',
@@ -281,8 +287,10 @@ class TimerPage extends StatefulWidget {
 }
 
 class TimerPageState extends State<TimerPage> {
-  final FlutterTts flutterTts = FlutterTts();
+  // Определяем переменную currentLanguage как поле класса с значением по умолчанию.
+  String currentLanguage = "en-US";
 
+  final FlutterTts flutterTts = FlutterTts();
   Timer? _uiTimer;
   Duration _accumulated = Duration.zero;
   DateTime? _startTime;
@@ -296,10 +304,8 @@ class TimerPageState extends State<TimerPage> {
   String? _displayedVoiceText;
   bool _displayedVoiceIsCommand = false;
   Timer? _clearVoiceTextTimer;
-
   int _lastIntervalAnnounced = -1;
   final List<LapRecord> _lapRecords = [];
-
   late VoiceCommandService voiceService;
   StreamSubscription<VoiceCommandResult>? _voiceSub;
 
@@ -317,33 +323,54 @@ class TimerPageState extends State<TimerPage> {
     return Duration.zero;
   }
 
+  // Функция показа модального окна загрузки модели.
+  Future<void> _showLoadingModelDialog() async {
+    // Получаем удобочитаемое название языка или возвращаем код, если не найдено.
+    final languageName = languageNames[currentLanguage] ?? currentLanguage;
+    // Показываем диалог загрузки, но не ждем его завершения.
+    showDialog(
+      context: context,
+      barrierDismissible:
+          false, // пользователь не может закрыть окно нажатием вне его
+      builder:
+          (context) => AlertDialog(
+            content: Row(
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text("Loading language model ($languageName)..."),
+                ),
+              ],
+            ),
+          ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     requestMicrophonePermission();
     _loadSettings();
-    flutterTts.setLanguage("en-US"); // установили язык на английский
+
+    // Устанавливаем язык для синтеза речи.
+    flutterTts.setLanguage(currentLanguage);
     flutterTts.setVolume(volume);
 
-    _uiTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
-      if (isActive && _startTime != null) {
-        setState(() {});
-        Duration currentElapsed = elapsed;
-        int totalSeconds = currentElapsed.inSeconds;
-        if (intervalSeconds != 0 &&
-            totalSeconds > 0 &&
-            totalSeconds % intervalSeconds == 0 &&
-            totalSeconds != _lastIntervalAnnounced) {
-          String announcement = _formatIntervalAnnouncement(currentElapsed);
-          flutterTts.speak(announcement);
-          _lastIntervalAnnounced = totalSeconds;
-          appLog("Announced interval: $announcement", name: "TimerPage");
-        }
-      }
-    });
-
+    // Инициализация голосового сервиса.
     voiceService = VoiceCommandService();
-    voiceService.initialize().then((_) {
+
+    // Используем addPostFrameCallback, чтобы работать с context уже после build().
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Показываем диалог загрузки модели.
+      _showLoadingModelDialog();
+
+      // Выполняем инициализацию модели.
+      await voiceService.initialize();
+
+      // После инициализации закрываем диалог.
+      Navigator.of(context).pop();
+
       if (voiceControlEnabled) {
         voiceService.startListening().then((_) {
           setState(() {
@@ -367,9 +394,25 @@ class TimerPageState extends State<TimerPage> {
           _handleVoiceCommand(result.text);
         }
       });
+      _maybeShowHelpDialog();
     });
 
-    _maybeShowHelpDialog();
+    _uiTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      if (isActive && _startTime != null) {
+        setState(() {});
+        Duration currentElapsed = elapsed;
+        int totalSeconds = currentElapsed.inSeconds;
+        if (intervalSeconds != 0 &&
+            totalSeconds > 0 &&
+            totalSeconds % intervalSeconds == 0 &&
+            totalSeconds != _lastIntervalAnnounced) {
+          String announcement = _formatIntervalAnnouncement(currentElapsed);
+          flutterTts.speak(announcement);
+          _lastIntervalAnnounced = totalSeconds;
+          appLog("Announced interval: $announcement", name: "TimerPage");
+        }
+      }
+    });
   }
 
   Future<void> _maybeShowHelpDialog() async {
