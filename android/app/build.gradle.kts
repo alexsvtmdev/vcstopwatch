@@ -26,7 +26,7 @@ android {
         applicationId = "com.libervibe.vcstopwatch"
         minSdk = 30
         targetSdk = flutter.targetSdkVersion
-        versionCode = 1
+        versionCode = 2
         versionName = "1.0.0"
     }
 
