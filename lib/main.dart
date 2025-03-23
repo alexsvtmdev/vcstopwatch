@@ -7,21 +7,51 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vosk_flutter_2/vosk_flutter_2.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter/foundation.dart';
+
+// Глобальный флаг для включения/отключения логирования.
+// Для продакшена можно установить false, для отладки — true.
+const bool kLoggingEnabled = true;
+
+void appLog(
+  String message, {
+  String name = 'AppLog',
+  int level = 0,
+  DateTime? time,
+  Object? error,
+  StackTrace? stackTrace,
+}) {
+  if (kLoggingEnabled) {
+    if (kReleaseMode) {
+      // В режиме релиза используем print для вывода логов
+      print('[$name] $message');
+    } else {
+      developer.log(
+        message,
+        name: name,
+        level: level,
+        time: time,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+}
 
 Future<void> requestMicrophonePermission() async {
   final status = await Permission.microphone.status;
 
   if (status.isGranted) {
-    developer.log('🎙️ Microphone permission already granted.');
+    appLog('🎙️ Microphone permission already granted.');
     return;
   }
 
   final result = await Permission.microphone.request();
 
   if (result == PermissionStatus.granted) {
-    developer.log('✅ Microphone permission granted.');
+    appLog('✅ Microphone permission granted.');
   } else {
-    developer.log('❌ Microphone permission not granted: $result');
+    appLog('❌ Microphone permission not granted: $result');
   }
 }
 
@@ -104,56 +134,79 @@ class VoiceCommandService {
     const modelName = 'vosk-model-small-en-us-0.15';
     const sampleRate = 16000;
     try {
-      developer.log("Loading model list...", name: "VoiceCommandService");
+      appLog("Loading model list...", name: "VoiceCommandService");
       final modelsList = await _modelLoader.loadModelsList();
+      appLog("Model list loaded successfully.", name: "VoiceCommandService");
+
       final modelDescription = modelsList.firstWhere(
         (m) => m.name == modelName,
       );
-      developer.log(
-        "Loading model from: ${modelDescription.url}",
+      appLog(
+        "Found model description: ${modelDescription.url}",
         name: "VoiceCommandService",
       );
+
+      appLog("Downloading model...", name: "VoiceCommandService");
       final modelPath = await _modelLoader.loadFromNetwork(
         modelDescription.url,
       );
-      model = await _vosk.createModel(modelPath);
-      developer.log("Model successfully created.", name: "VoiceCommandService");
+      appLog(
+        "Model downloaded to path: $modelPath",
+        name: "VoiceCommandService",
+      );
 
+      model = await _vosk.createModel(modelPath);
+      appLog("Model successfully created.", name: "VoiceCommandService");
+    } catch (e, stackTrace) {
+      appLog(
+        "Error during model initialization: $e",
+        name: "VoiceCommandService",
+        stackTrace: stackTrace,
+      );
+      return; // или пробросить ошибку, если необходимо
+    }
+
+    try {
       recognizer = await _vosk.createRecognizer(
         model: model!,
         sampleRate: sampleRate,
       );
-      developer.log(
-        "Recognizer successfully created.",
-        name: "VoiceCommandService",
-      );
-
+      appLog("Recognizer successfully created.", name: "VoiceCommandService");
       await recognizer!.setGrammar(grammarList);
-      developer.log(
-        "Grammar set to: $grammarList",
+      appLog("Grammar set to: $grammarList", name: "VoiceCommandService");
+    } catch (e, stackTrace) {
+      appLog(
+        "Error during recognizer setup: $e",
         name: "VoiceCommandService",
+        stackTrace: stackTrace,
       );
+      return;
+    }
 
+    try {
       if (Platform.isAndroid) {
         speechService = await _vosk.initSpeechService(recognizer!);
         speechService!.onResult().listen((result) {
           processResult(result);
         });
+        appLog("Speech service initialized.", name: "VoiceCommandService");
       }
-      developer.log(
-        "VoiceCommandService initialized.",
+    } catch (e, stackTrace) {
+      appLog(
+        "Error initializing speech service: $e",
         name: "VoiceCommandService",
-      );
-    } catch (e) {
-      developer.log(
-        "Error in VoiceCommandService.initialize: $e",
-        name: "VoiceCommandService",
+        stackTrace: stackTrace,
       );
     }
+
+    appLog(
+      "VoiceCommandService fully initialized.",
+      name: "VoiceCommandService",
+    );
   }
 
   void processResult(String resultJson) {
-    developer.log("Raw voice result: $resultJson", name: "VoiceCommandService");
+    appLog("Raw voice result: $resultJson", name: "VoiceCommandService");
     try {
       final result = jsonDecode(resultJson);
       if (result.containsKey('text')) {
@@ -171,30 +224,27 @@ class VoiceCommandService {
         _controller.add(
           VoiceCommandResult(text: recognized, isCommand: isCommand),
         );
-        developer.log(
+        appLog(
           "Processed voice result: $recognized, isCommand: $isCommand",
           name: "VoiceCommandService",
         );
       }
     } catch (e) {
-      developer.log(
-        "Error processing voice result: $e",
-        name: "VoiceCommandService",
-      );
+      appLog("Error processing voice result: $e", name: "VoiceCommandService");
     }
   }
 
   Future<void> startListening() async {
     if (speechService != null) {
       await speechService!.start();
-      developer.log("Voice recognition started.", name: "VoiceCommandService");
+      appLog("Voice recognition started.", name: "VoiceCommandService");
     }
   }
 
   Future<void> stopListening() async {
     if (speechService != null) {
       await speechService!.stop();
-      developer.log("Voice recognition stopped.", name: "VoiceCommandService");
+      appLog("Voice recognition stopped.", name: "VoiceCommandService");
     }
   }
 
@@ -287,7 +337,7 @@ class TimerPageState extends State<TimerPage> {
           String announcement = _formatIntervalAnnouncement(currentElapsed);
           flutterTts.speak(announcement);
           _lastIntervalAnnounced = totalSeconds;
-          developer.log("Announced interval: $announcement", name: "TimerPage");
+          appLog("Announced interval: $announcement", name: "TimerPage");
         }
       }
     });
@@ -299,10 +349,7 @@ class TimerPageState extends State<TimerPage> {
           setState(() {
             voiceRecognitionActive = true;
           });
-          developer.log(
-            "Voice recognition started automatically.",
-            name: "TimerPage",
-          );
+          appLog("Voice recognition started automatically.", name: "TimerPage");
         });
       }
       _voiceSub = voiceService.commandStream.listen((result) {
@@ -379,7 +426,7 @@ class TimerPageState extends State<TimerPage> {
       );
       _lapRecords.insert(0, lapRecord);
       _lapStartTime = DateTime.now();
-      developer.log(
+      appLog(
         "Lap recorded: Circle $lapNumber, lap time: $currentLap, overall: $overall",
         name: "TimerPage",
       );
@@ -388,7 +435,7 @@ class TimerPageState extends State<TimerPage> {
   }
 
   void _handleVoiceCommand(String commandText) {
-    developer.log("Voice command received: $commandText", name: "TimerPage");
+    appLog("Voice command received: $commandText", name: "TimerPage");
     if (commandText.contains("start") ||
         commandText.contains("go") ||
         commandText.contains("begin") ||
@@ -400,7 +447,7 @@ class TimerPageState extends State<TimerPage> {
           _startTime = DateTime.now();
           _lapStartTime = DateTime.now();
         });
-        developer.log(
+        appLog(
           "Voice command executed: start/go/begin/resume",
           name: "TimerPage",
         );
@@ -416,7 +463,7 @@ class TimerPageState extends State<TimerPage> {
           _accumulated = total;
           _startTime = null;
         });
-        developer.log("Voice command executed: stop/pause", name: "TimerPage");
+        appLog("Voice command executed: stop/pause", name: "TimerPage");
       }
     } else if (commandText.contains("lap") || commandText.contains("split")) {
       if (isActive && _lapStartTime != null) {
@@ -434,7 +481,7 @@ class TimerPageState extends State<TimerPage> {
         _lapStartTime = null;
         _lapRecords.clear();
       });
-      developer.log(
+      appLog(
         "Voice command executed: reset/clear/restart/renew",
         name: "TimerPage",
       );
@@ -483,7 +530,7 @@ class TimerPageState extends State<TimerPage> {
                   _startTime = DateTime.now();
                   _lapStartTime = DateTime.now();
                 });
-                developer.log("Manual: Stopwatch started", name: "TimerPage");
+                appLog("Manual: Stopwatch started", name: "TimerPage");
               } else if (isActive && _startTime != null) {
                 Duration currentRun = DateTime.now().difference(_startTime!);
                 Duration total = _accumulated + currentRun;
@@ -494,7 +541,7 @@ class TimerPageState extends State<TimerPage> {
                   _accumulated = total;
                   _startTime = null;
                 });
-                developer.log("Manual: Stopwatch stopped", name: "TimerPage");
+                appLog("Manual: Stopwatch stopped", name: "TimerPage");
               }
             },
             child: Text(
@@ -637,7 +684,7 @@ class TimerPageState extends State<TimerPage> {
       _lapStartTime = null;
       _lapRecords.clear();
     });
-    developer.log("Manual: Stopwatch reset", name: "TimerPage");
+    appLog("Manual: Stopwatch reset", name: "TimerPage");
   }
 
   @override
@@ -762,10 +809,7 @@ class TimerPageState extends State<TimerPage> {
                       _startTime = DateTime.now();
                       _lapStartTime = DateTime.now();
                     });
-                    developer.log(
-                      "Manual: Stopwatch started",
-                      name: "TimerPage",
-                    );
+                    appLog("Manual: Stopwatch started", name: "TimerPage");
                   } else if (isActive && _startTime != null) {
                     Duration currentRun = DateTime.now().difference(
                       _startTime!,
@@ -778,10 +822,7 @@ class TimerPageState extends State<TimerPage> {
                       _accumulated = total;
                       _startTime = null;
                     });
-                    developer.log(
-                      "Manual: Stopwatch stopped",
-                      name: "TimerPage",
-                    );
+                    appLog("Manual: Stopwatch stopped", name: "TimerPage");
                   }
                 },
                 child: Text(
@@ -1053,14 +1094,14 @@ class SettingsPageState extends State<SettingsPage> {
                   widget.state.voiceRecognitionActive = value;
                   if (value) {
                     widget.state.voiceService.startListening().then((_) {
-                      developer.log(
+                      appLog(
                         "Voice recognition enabled via settings.",
                         name: "SettingsPage",
                       );
                     });
                   } else {
                     widget.state.voiceService.stopListening().then((_) {
-                      developer.log(
+                      appLog(
                         "Voice recognition disabled via settings.",
                         name: "SettingsPage",
                       );
