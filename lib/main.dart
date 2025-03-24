@@ -258,7 +258,16 @@ class VoiceCommandService {
   }
 }
 
-void main() {
+const bool kEnableSplashDelayForPromo =
+    false; // 👉 переключи на true для ролика
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  if (kEnableSplashDelayForPromo) {
+    WidgetsBinding.instance.deferFirstFrame();
+  }
+
   // Перехватываем ошибки Flutter
   FlutterError.onError = (FlutterErrorDetails details) {
     appLog(
@@ -266,12 +275,16 @@ void main() {
       name: "FlutterError",
       stackTrace: details.stack,
     );
-    // Можно также выводить детали в консоль или отправлять на сервер
   };
 
   runZonedGuarded(
-    () {
+    () async {
       runApp(const MyApp());
+
+      if (kEnableSplashDelayForPromo) {
+        await Future.delayed(const Duration(seconds: 2));
+        WidgetsBinding.instance.allowFirstFrame();
+      }
     },
     (error, stackTrace) {
       appLog(
