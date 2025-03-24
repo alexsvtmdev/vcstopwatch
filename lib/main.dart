@@ -44,20 +44,19 @@ void appLog(
   }
 }
 
-Future<void> requestMicrophonePermission() async {
+Future<bool> requestMicrophonePermission() async {
   final status = await Permission.microphone.status;
-
   if (status.isGranted) {
     appLog('🎙️ Microphone permission already granted.');
-    return;
+    return true;
   }
-
   final result = await Permission.microphone.request();
-
   if (result == PermissionStatus.granted) {
     appLog('✅ Microphone permission granted.');
+    return true;
   } else {
     appLog('❌ Microphone permission not granted: $result');
+    return false;
   }
 }
 
@@ -314,6 +313,7 @@ class TimerPageState extends State<TimerPage> {
   );
   // Определяем переменную currentLanguage как поле класса с значением по умолчанию.
   String currentLanguage = "en-US";
+  bool _micPermissionGranted = false;
 
   final FlutterTts flutterTts = FlutterTts();
   Timer? _uiTimer;
@@ -458,7 +458,17 @@ class TimerPageState extends State<TimerPage> {
   @override
   void initState() {
     super.initState();
-    requestMicrophonePermission();
+    // Запрашиваем разрешение и сохраняем результат.
+    requestMicrophonePermission().then((granted) {
+      setState(() {
+        _micPermissionGranted = granted;
+        if (!granted) {
+          // Если разрешение не получено, автоматически выключаем голосовое распознавание.
+          voiceControlEnabled = false;
+          voiceRecognitionActive = false;
+        }
+      });
+    });
     _loadSettings();
 
     // Устанавливаем язык для синтеза речи.
@@ -1254,15 +1264,40 @@ class SettingsPageState extends State<SettingsPage> {
                 },
               ),
             ),
+            // Внутри SettingsPageState.build(...), замените обработчик onChanged для SwitchListTile:
             SwitchListTile(
               title: const Text('Voice Control'),
               value: widget.state.voiceControlEnabled,
-              onChanged: (bool value) {
-                setState(() {
-                  widget.state.voiceControlEnabled = value;
-                  widget.state._saveSettings();
-                });
+              onChanged: (bool value) async {
                 if (value) {
+                  // Пользователь пытается включить голосовое распознавание.
+                  // Повторно запрашиваем разрешение на микрофон.
+                  bool micGranted = await requestMicrophonePermission();
+                  // Обновляем переменную _micPermissionGranted
+                  setState(() {
+                    widget.state._micPermissionGranted = micGranted;
+                  });
+                  if (!micGranted) {
+                    // Если разрешение не получено, показываем уведомление и отключаем опцию.
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          "Microphone permission not granted. Voice recognition disabled.",
+                        ),
+                      ),
+                    );
+                    setState(() {
+                      widget.state.voiceControlEnabled = false;
+                      widget.state.voiceRecognitionActive = false;
+                    });
+                    await widget.state._saveSettings();
+                    return;
+                  }
+                  // Если разрешение получено, включаем опцию и запускаем инициализацию голосового сервиса.
+                  setState(() {
+                    widget.state.voiceControlEnabled = true;
+                  });
+                  await widget.state._saveSettings();
                   appLog(
                     "Voice control enabled. Starting initialization...",
                     name: "SettingsPage",
@@ -1283,6 +1318,11 @@ class SettingsPageState extends State<SettingsPage> {
                         );
                       });
                 } else {
+                  // Если опция выключается, останавливаем голосовой сервис.
+                  setState(() {
+                    widget.state.voiceControlEnabled = false;
+                  });
+                  await widget.state._saveSettings();
                   appLog(
                     "Voice control disabled. Stopping voice service...",
                     name: "SettingsPage",
