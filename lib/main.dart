@@ -348,14 +348,93 @@ class TimerPageState extends State<TimerPage> {
     return Duration.zero;
   }
 
+  Future<void> _initializeVoiceServiceWithModal() async {
+    // Показываем модальное окно загрузки
+    _showLoadingModelDialog();
+    // Обновляем статус
+    loadingStatus.value = "Initializing voice service...";
+    try {
+      // Пытаемся инициализировать сервис с таймаутом 30 секунд
+      await voiceService.initialize().timeout(const Duration(seconds: 30));
+      loadingStatus.value = "Voice service initialized.";
+      // Закрываем диалог
+      Navigator.of(context).pop();
+      // Если голосовой сервис включён, запускаем его
+      if (voiceControlEnabled) {
+        await _startSpeechService();
+      }
+    } catch (e) {
+      // Если произошла ошибка (например, отсутствует интернет)
+      loadingStatus.value = "Initialization failed: ${e.toString()}";
+      appLog("Voice service initialization failed: $e", name: "TimerPage");
+      // Ждём несколько секунд, чтобы пользователь увидел сообщение, затем закрываем диалог
+      await Future.delayed(const Duration(seconds: 2));
+      Navigator.of(context).pop();
+      // Отключаем голосовой сервис
+      setState(() {
+        voiceRecognitionActive = false;
+      });
+    }
+  }
+
+  Future<void> _startSpeechService() async {
+    loadingStatus.value = "Starting speech service...";
+    try {
+      await voiceService.startListening();
+      setState(() {
+        voiceRecognitionActive = true;
+      });
+      appLog("Speech service started.", name: "TimerPage");
+    } catch (e, st) {
+      appLog(
+        "Error starting speech service: $e",
+        name: "TimerPage",
+        stackTrace: st,
+      );
+      // Попытка перезапуска, если ошибка
+      await _restartSpeechService();
+    }
+  }
+
+  Future<void> _restartSpeechService() async {
+    appLog("Restarting speech service...", name: "TimerPage");
+    await _stopSpeechService();
+    await Future.delayed(const Duration(seconds: 2));
+    try {
+      await voiceService.initialize();
+      await _startSpeechService();
+      appLog("Speech service restarted.", name: "TimerPage");
+    } catch (e, st) {
+      appLog(
+        "Error restarting speech service: $e",
+        name: "TimerPage",
+        stackTrace: st,
+      );
+    }
+  }
+
+  Future<void> _stopSpeechService() async {
+    loadingStatus.value = "Stopping speech service...";
+    try {
+      await voiceService.stopListening();
+      setState(() {
+        voiceRecognitionActive = false;
+      });
+      appLog("Speech service stopped.", name: "TimerPage");
+    } catch (e, st) {
+      appLog(
+        "Error stopping speech service: $e",
+        name: "TimerPage",
+        stackTrace: st,
+      );
+    }
+  }
+
   // Функция показа модального окна загрузки модели.
   Future<void> _showLoadingModelDialog() async {
-    final languageName = languageNames[currentLanguage] ?? currentLanguage;
     showDialog(
-      context:
-          context, // здесь context доступен, так как метод внутри класса TimerPageState
-      barrierDismissible:
-          false, // пользователь не может закрыть окно нажатием вне его
+      context: context,
+      barrierDismissible: false,
       builder:
           (context) => AlertDialog(
             content: Row(
@@ -363,7 +442,12 @@ class TimerPageState extends State<TimerPage> {
                 const CircularProgressIndicator(),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text("Loading language model ($languageName)..."),
+                  child: ValueListenableBuilder<String>(
+                    valueListenable: loadingStatus,
+                    builder: (context, value, child) {
+                      return Text(value);
+                    },
+                  ),
                 ),
               ],
             ),
@@ -386,41 +470,31 @@ class TimerPageState extends State<TimerPage> {
 
     // Используем addPostFrameCallback, чтобы работать с context уже после build().
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Показываем диалог загрузки
-      _showLoadingModelDialog();
+      // Запускаем инициализацию голосового сервиса с модальным окном, показывающим актуальный статус.
+      await _initializeVoiceServiceWithModal();
 
-      // Обновляем статус перед инициализацией модели
-      loadingStatus.value = "Initializing voice service...";
-
-      // Выполняем инициализацию модели.
-      await voiceService.initialize();
-
-      // После завершения инициализации закрываем диалог
-      Navigator.of(context).pop();
-
-      if (voiceControlEnabled) {
-        voiceService.startListening().then((_) {
+      // Подписываемся на поток команд
+      _voiceSub = voiceService.commandStream.listen(
+        (result) {
           setState(() {
-            voiceRecognitionActive = true;
+            _displayedVoiceText = result.text;
+            _displayedVoiceIsCommand = result.isCommand;
           });
-          appLog("Voice recognition started automatically.", name: "TimerPage");
-        });
-      }
-      _voiceSub = voiceService.commandStream.listen((result) {
-        setState(() {
-          _displayedVoiceText = result.text;
-          _displayedVoiceIsCommand = result.isCommand;
-        });
-        _clearVoiceTextTimer?.cancel();
-        _clearVoiceTextTimer = Timer(const Duration(seconds: 3), () {
-          setState(() {
-            _displayedVoiceText = " ";
+          _clearVoiceTextTimer?.cancel();
+          _clearVoiceTextTimer = Timer(const Duration(seconds: 3), () {
+            setState(() {
+              _displayedVoiceText = " ";
+            });
           });
-        });
-        if (result.isCommand) {
-          _handleVoiceCommand(result.text);
-        }
-      });
+          if (result.isCommand) {
+            _handleVoiceCommand(result.text);
+          }
+        },
+        onError: (error) async {
+          appLog("Speech service error: $error", name: "TimerPage");
+          await _restartSpeechService();
+        },
+      );
       _maybeShowHelpDialog();
     });
 
@@ -1187,23 +1261,48 @@ class SettingsPageState extends State<SettingsPage> {
                 setState(() {
                   widget.state.voiceControlEnabled = value;
                   widget.state._saveSettings();
-                  widget.state.voiceRecognitionActive = value;
-                  if (value) {
-                    widget.state.voiceService.startListening().then((_) {
-                      appLog(
-                        "Voice recognition enabled via settings.",
-                        name: "SettingsPage",
-                      );
-                    });
-                  } else {
-                    widget.state.voiceService.stopListening().then((_) {
-                      appLog(
-                        "Voice recognition disabled via settings.",
-                        name: "SettingsPage",
-                      );
-                    });
-                  }
                 });
+                if (value) {
+                  appLog(
+                    "Voice control enabled. Starting initialization...",
+                    name: "SettingsPage",
+                  );
+                  widget.state
+                      ._initializeVoiceServiceWithModal()
+                      .then((_) {
+                        appLog(
+                          "Voice service started via settings.",
+                          name: "SettingsPage",
+                        );
+                      })
+                      .catchError((error, stackTrace) {
+                        appLog(
+                          "Error during voice service initialization: $error",
+                          name: "SettingsPage",
+                          stackTrace: stackTrace,
+                        );
+                      });
+                } else {
+                  appLog(
+                    "Voice control disabled. Stopping voice service...",
+                    name: "SettingsPage",
+                  );
+                  widget.state
+                      ._stopSpeechService()
+                      .then((_) {
+                        appLog(
+                          "Voice service stopped via settings.",
+                          name: "SettingsPage",
+                        );
+                      })
+                      .catchError((error, stackTrace) {
+                        appLog(
+                          "Error stopping voice service: $error",
+                          name: "SettingsPage",
+                          stackTrace: stackTrace,
+                        );
+                      });
+                }
               },
             ),
           ],
