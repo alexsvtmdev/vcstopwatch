@@ -1271,14 +1271,54 @@ class SettingsPageState extends State<SettingsPage> {
               onChanged: (bool value) async {
                 if (value) {
                   // Пользователь пытается включить голосовое распознавание.
-                  // Повторно запрашиваем разрешение на микрофон.
-                  bool micGranted = await requestMicrophonePermission();
-                  // Обновляем переменную _micPermissionGranted
-                  setState(() {
-                    widget.state._micPermissionGranted = micGranted;
-                  });
+                  PermissionStatus status = await Permission.microphone.status;
+
+                  if (status.isDenied ||
+                      status.isRestricted ||
+                      status.isPermanentlyDenied) {
+                    // Показываем диалог с предложением открыть настройки
+                    final shouldOpenSettings = await showDialog<bool>(
+                      context: context,
+                      builder:
+                          (context) => AlertDialog(
+                            title: const Text(
+                              "Microphone permission not granted",
+                            ),
+                            content: const Text(
+                              "To use voice control, please allow microphone access in the app settings.",
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed:
+                                    () => Navigator.of(context).pop(false),
+                                child: const Text("Отмена"),
+                              ),
+                              TextButton(
+                                onPressed:
+                                    () => Navigator.of(context).pop(true),
+                                child: const Text("Открыть настройки"),
+                              ),
+                            ],
+                          ),
+                    );
+
+                    if (shouldOpenSettings == true) {
+                      // Открываем системные настройки приложения
+                      await openAppSettings();
+                    }
+
+                    // Отключаем переключатель обратно
+                    setState(() {
+                      widget.state.voiceControlEnabled = false;
+                      widget.state.voiceRecognitionActive = false;
+                    });
+                    await widget.state._saveSettings();
+                    return;
+                  }
+
+                  // Разрешение уже есть или только что получено
+                  final micGranted = await requestMicrophonePermission();
                   if (!micGranted) {
-                    // Если разрешение не получено, показываем уведомление и отключаем опцию.
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text(
@@ -1293,7 +1333,8 @@ class SettingsPageState extends State<SettingsPage> {
                     await widget.state._saveSettings();
                     return;
                   }
-                  // Если разрешение получено, включаем опцию и запускаем инициализацию голосового сервиса.
+
+                  // Всё в порядке — включаем
                   setState(() {
                     widget.state.voiceControlEnabled = true;
                   });
@@ -1318,7 +1359,7 @@ class SettingsPageState extends State<SettingsPage> {
                         );
                       });
                 } else {
-                  // Если опция выключается, останавливаем голосовой сервис.
+                  // Выключение распознавания
                   setState(() {
                     widget.state.voiceControlEnabled = false;
                   });
