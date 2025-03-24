@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vosk_flutter_2/vosk_flutter_2.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 // Глобальный флаг для включения/отключения логирования.
 // Для продакшена можно установить false, для отладки — true.
@@ -259,11 +260,19 @@ class VoiceCommandService {
 }
 
 const bool kEnableSplashDelayForPromo =
-    false; // 👉 переключи на true для ролика
+    true; // 👉 переключи на true для ролика - задержка сплешскрина
+const bool kEnableImmersiveForPromo =
+    true; // 👉 переключи на true для ролика - исчезновение кнопок
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Включаем immersive-режим, если нужно
+  if (kEnableImmersiveForPromo) {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
+  // Если нужно задержать сплеш-экран
   if (kEnableSplashDelayForPromo) {
     WidgetsBinding.instance.deferFirstFrame();
   }
@@ -282,7 +291,7 @@ void main() async {
       runApp(const MyApp());
 
       if (kEnableSplashDelayForPromo) {
-        await Future.delayed(const Duration(seconds: 2));
+        await Future.delayed(const Duration(seconds: 4));
         WidgetsBinding.instance.allowFirstFrame();
       }
     },
