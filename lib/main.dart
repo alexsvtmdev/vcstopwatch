@@ -10,16 +10,46 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:another_flushbar/flushbar.dart';
+import 'package:path_provider/path_provider.dart';
 
 // Глобальный флаг для включения/отключения логирования.
 // Для продакшена можно установить false, для отладки — true.
 const bool kLoggingEnabled = true;
 
 const Map<String, String> languageNames = {
-  "en-US": "English",
-  "ru-RU": "Русский",
-  // можно добавить и другие
+  "en-us": "English",
+  "ru": "Russian",
+  "fr": "French",
+  "de": "German",
+  "es": "Spanish",
+  "cn": "Chinese",
+  "it": "Italian",
+  "pt": "Portuguese",
+  "nl": "Dutch",
+  "uk": "Ukrainian",
+  "ja": "Japanese",
+  "ko": "Korean",
+  "ar": "Arabic",
+  "hi": "Hindi",
+  "fa": "Farsi",
+  "pl": "Polish",
+  "cs": "Czech",
+  "tr": "Turkish",
+  "el-gr": "Greek",
+  "tl-ph": "Filipino",
+  "ca": "Catalan",
 };
+
+/// Функция для извлечения имени языка из пути модели.
+String extractLanguageNameFromModelPath(String path) {
+  final regex = RegExp(r'(vosk-model(?:-small)?-)([a-z\-]+)(?:-[^/\\]*)?$');
+  final match = regex.firstMatch(path.toLowerCase());
+  if (match != null && match.groupCount >= 2) {
+    final langCode = match.group(2)!;
+    return languageNames[langCode] ?? langCode;
+  }
+  return "unknown";
+}
 
 void appLog(
   String message, {
@@ -137,10 +167,13 @@ class VoiceCommandService {
 
   Stream<VoiceCommandResult> get commandStream => _controller.stream;
 
-  Future<void> initialize() async {
+  Future<void> initialize({ValueNotifier<String>? loadingStatus}) async {
     const modelName = 'vosk-model-small-en-us-0.15';
     const sampleRate = 16000;
+
     try {
+      loadingStatus?.value = "Initializing voice service...";
+
       appLog("Loading model list...", name: "VoiceCommandService");
       final modelsList = await _modelLoader.loadModelsList();
       appLog("Model list loaded successfully.", name: "VoiceCommandService");
@@ -153,12 +186,36 @@ class VoiceCommandService {
         name: "VoiceCommandService",
       );
 
-      appLog("Downloading model...", name: "VoiceCommandService");
+      // Проверяем наличие локальной модели по имени
+      final dir = await getApplicationSupportDirectory();
+      final modelFolder = Directory('${dir.path}/$modelName');
+
+      final bool modelExists = await modelFolder.exists();
+
+      final languageCode = extractLanguageNameFromModelPath(modelName);
+
+      if (!modelExists) {
+        // Модель не существует — загружаем
+
+        // ✅ Обновляем статус и даем UI время на отрисовку
+        loadingStatus?.value = "Downloading language: $languageCode";
+        await Future.delayed(Duration(milliseconds: 10));
+
+        appLog("Downloading model...", name: "VoiceCommandService");
+      }
+
       final modelPath = await _modelLoader.loadFromNetwork(
         modelDescription.url,
       );
       appLog(
         "Model downloaded to path: $modelPath",
+        name: "VoiceCommandService",
+      );
+
+      // ✅ Только после завершения загрузки — меняем статус обратно
+      loadingStatus?.value = "Initializing voice service...";
+      appLog(
+        "Set loadingStatus to: Downloading language: $languageCode",
         name: "VoiceCommandService",
       );
 
@@ -170,7 +227,7 @@ class VoiceCommandService {
         name: "VoiceCommandService",
         stackTrace: stackTrace,
       );
-      return; // или пробросить ошибку, если необходимо
+      return;
     }
 
     try {
@@ -179,6 +236,7 @@ class VoiceCommandService {
         sampleRate: sampleRate,
       );
       appLog("Recognizer successfully created.", name: "VoiceCommandService");
+
       await recognizer!.setGrammar(grammarList);
       appLog("Grammar set to: $grammarList", name: "VoiceCommandService");
     } catch (e, stackTrace) {
@@ -379,7 +437,9 @@ class TimerPageState extends State<TimerPage> {
     loadingStatus.value = "Initializing voice service...";
     try {
       // Пытаемся инициализировать сервис с таймаутом 30 секунд
-      await voiceService.initialize().timeout(const Duration(seconds: 30));
+      await voiceService
+          .initialize(loadingStatus: loadingStatus)
+          .timeout(const Duration(seconds: 60));
       loadingStatus.value = "Voice service initialized.";
       // Закрываем диалог
       Navigator.of(context).pop();
@@ -425,7 +485,7 @@ class TimerPageState extends State<TimerPage> {
     await _stopSpeechService();
     await Future.delayed(const Duration(seconds: 2));
     try {
-      await voiceService.initialize();
+      await voiceService.initialize(loadingStatus: loadingStatus);
       await _startSpeechService();
       appLog("Speech service restarted.", name: "TimerPage");
     } catch (e, st) {
@@ -469,6 +529,7 @@ class TimerPageState extends State<TimerPage> {
                   child: ValueListenableBuilder<String>(
                     valueListenable: loadingStatus,
                     builder: (context, value, child) {
+                      appLog("value: $value", name: "UI STATUS");
                       return Text(value);
                     },
                   ),
