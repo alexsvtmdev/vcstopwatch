@@ -261,14 +261,14 @@ class VoiceCommandService {
 
 const bool kEnableSplashDelayForPromo =
     true; // 👉 переключи на true для ролика - задержка сплешскрина
-const bool kEnableImmersiveForPromo =
-    true; // 👉 переключи на true для ролика - исчезновение кнопок
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+  final immersiveEnabled = prefs.getBool('immersiveMode') ?? false;
 
   // Включаем immersive-режим, если нужно
-  if (kEnableImmersiveForPromo) {
+  if (immersiveEnabled) {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
@@ -347,6 +347,7 @@ class TimerPageState extends State<TimerPage> {
   int intervalSeconds = 30;
   bool voiceControlEnabled = true;
   bool voiceRecognitionActive = false;
+  bool immersiveModeEnabled = false;
 
   String? _displayedVoiceText;
   bool _displayedVoiceIsCommand = false;
@@ -670,6 +671,7 @@ class TimerPageState extends State<TimerPage> {
       volume = prefs.getDouble('volume') ?? 1.0;
       intervalSeconds = prefs.getInt('intervalSeconds') ?? 30;
       voiceControlEnabled = prefs.getBool('voiceControlEnabled') ?? true;
+      immersiveModeEnabled = prefs.getBool('immersiveMode') ?? false;
     });
     flutterTts.setVolume(volume);
   }
@@ -679,6 +681,7 @@ class TimerPageState extends State<TimerPage> {
     await prefs.setDouble('volume', volume);
     await prefs.setInt('intervalSeconds', intervalSeconds);
     await prefs.setBool('voiceControlEnabled', voiceControlEnabled);
+    await prefs.setBool('immersiveMode', immersiveModeEnabled);
   }
 
   // В ландшафтном режиме с записями фиксированно располагаем кнопки в нижней области.
@@ -1406,6 +1409,39 @@ class SettingsPageState extends State<SettingsPage> {
                         );
                       });
                 }
+              },
+            ),
+            SwitchListTile(
+              title: const Text("Full screen mode (immersive)"),
+              value: widget.state.immersiveModeEnabled,
+              onChanged: (bool value) {
+                // Меняем и локальное, и глобальное состояние
+                setState(() {
+                  widget.state.immersiveModeEnabled = value;
+                });
+
+                // Сохраняем
+                widget.state._saveSettings();
+
+                // Показываем сообщение после кадра
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  showDialog(
+                    context: context,
+                    builder:
+                        (context) => AlertDialog(
+                          title: const Text("Restart Required"),
+                          content: const Text(
+                            "The new display mode will take effect after restarting the app.",
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: const Text("OK"),
+                            ),
+                          ],
+                        ),
+                  );
+                });
               },
             ),
           ],
