@@ -9,6 +9,7 @@ import 'package:vosk_flutter_2/vosk_flutter_2.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:another_flushbar/flushbar.dart';
 
 // Глобальный флаг для включения/отключения логирования.
 // Для продакшена можно установить false, для отладки — true.
@@ -260,7 +261,7 @@ class VoiceCommandService {
 }
 
 const bool kEnableSplashDelayForPromo =
-    true; // 👉 переключи на true для ролика - задержка сплешскрина
+    false; // 👉 переключи на true для ролика - задержка сплешскрина
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -1415,32 +1416,25 @@ class SettingsPageState extends State<SettingsPage> {
               title: const Text("Full screen mode (immersive)"),
               value: widget.state.immersiveModeEnabled,
               onChanged: (bool value) {
-                // Меняем и локальное, и глобальное состояние
+                // Мгновенно обновляем UI
                 setState(() {
                   widget.state.immersiveModeEnabled = value;
                 });
 
-                // Сохраняем
+                // Сохраняем в настройки
                 widget.state._saveSettings();
 
-                // Показываем сообщение после кадра
+                // Показываем Flushbar после перерисовки, чтобы не мешать переключателю
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  showDialog(
-                    context: context,
-                    builder:
-                        (context) => AlertDialog(
-                          title: const Text("Restart Required"),
-                          content: const Text(
-                            "The new display mode will take effect after restarting the app.",
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              child: const Text("OK"),
-                            ),
-                          ],
-                        ),
-                  );
+                  Flushbar(
+                    message:
+                        "The new display mode will take effect after restarting the app.",
+                    duration: const Duration(seconds: 2),
+                    margin: const EdgeInsets.all(12),
+                    borderRadius: BorderRadius.circular(8),
+                    backgroundColor: Colors.black87,
+                    flushbarPosition: FlushbarPosition.BOTTOM,
+                  ).show(context);
                 });
               },
             ),

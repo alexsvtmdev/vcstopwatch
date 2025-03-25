@@ -14,6 +14,7 @@ dependencies:
   shared_preferences: ^2.0.15
   vosk_flutter_2: ^1.0.5
   permission_handler: ^11.4.0
+  another_flushbar: ^1.10.30
 
 dev_dependencies:
   flutter_test:
