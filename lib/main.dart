@@ -167,67 +167,38 @@ class VoiceCommandService {
 
   Stream<VoiceCommandResult> get commandStream => _controller.stream;
 
-  Future<void> initialize({ValueNotifier<String>? loadingStatus}) async {
+  // Обновлённый метод initialize с новым параметром.
+  Future<void> initialize({
+    ValueNotifier<String>? loadingStatus,
+    bool initSpeechService = true,
+  }) async {
     const modelName = 'vosk-model-small-en-us-0.15';
     const sampleRate = 16000;
 
     try {
       loadingStatus?.value = "Initializing voice service...";
-
-      appLog("Loading model list...", name: "VoiceCommandService");
       final modelsList = await _modelLoader.loadModelsList();
-      appLog("Model list loaded successfully.", name: "VoiceCommandService");
-
       final modelDescription = modelsList.firstWhere(
         (m) => m.name == modelName,
       );
-      appLog(
-        "Found model description: ${modelDescription.url}",
-        name: "VoiceCommandService",
-      );
 
-      // Проверяем наличие локальной модели по имени
+      // Проверка и загрузка модели...
       final dir = await getApplicationSupportDirectory();
       final modelFolder = Directory('${dir.path}/$modelName');
-
       final bool modelExists = await modelFolder.exists();
-
       final languageCode = extractLanguageNameFromModelPath(modelName);
-
       if (!modelExists) {
-        // Модель не существует — загружаем
-
-        // ✅ Обновляем статус и даем UI время на отрисовку
         loadingStatus?.value = "Downloading language: $languageCode";
         await Future.delayed(Duration(milliseconds: 10));
-
-        appLog("Downloading model...", name: "VoiceCommandService");
       }
-
       final modelPath = await _modelLoader.loadFromNetwork(
         modelDescription.url,
       );
-      appLog(
-        "Model downloaded to path: $modelPath",
-        name: "VoiceCommandService",
-      );
-
-      // ✅ Только после завершения загрузки — меняем статус обратно
       loadingStatus?.value = "Initializing voice service...";
-      appLog(
-        "Set loadingStatus to: Downloading language: $languageCode",
-        name: "VoiceCommandService",
-      );
-
       model = await _vosk.createModel(modelPath);
-      appLog("Model successfully created.", name: "VoiceCommandService");
-    } catch (e, stackTrace) {
-      appLog(
-        "Error during model initialization: $e",
-        name: "VoiceCommandService",
-        stackTrace: stackTrace,
-      );
-      return;
+    } catch (e) {
+      // Обработка ошибок загрузки модели.
+      rethrow;
     }
 
     try {
@@ -235,19 +206,23 @@ class VoiceCommandService {
         model: model!,
         sampleRate: sampleRate,
       );
-      appLog("Recognizer successfully created.", name: "VoiceCommandService");
-
       await recognizer!.setGrammar(grammarList);
-      appLog("Grammar set to: $grammarList", name: "VoiceCommandService");
-    } catch (e, stackTrace) {
-      appLog(
-        "Error during recognizer setup: $e",
-        name: "VoiceCommandService",
-        stackTrace: stackTrace,
-      );
-      return;
+    } catch (e) {
+      rethrow;
     }
 
+    // Если параметр initSpeechService истинен, запускаем инициализацию микрофонного сервиса.
+    if (initSpeechService) {
+      await initializeSpeechService();
+    }
+
+    appLog(
+      "VoiceCommandService fully initialized.",
+      name: "VoiceCommandService",
+    );
+  }
+
+  Future<void> initializeSpeechService() async {
     try {
       if (Platform.isAndroid) {
         speechService = await _vosk.initSpeechService(recognizer!);
@@ -262,12 +237,8 @@ class VoiceCommandService {
         name: "VoiceCommandService",
         stackTrace: stackTrace,
       );
+      rethrow;
     }
-
-    appLog(
-      "VoiceCommandService fully initialized.",
-      name: "VoiceCommandService",
-    );
   }
 
   void processResult(String resultJson) {
@@ -387,13 +358,19 @@ class TimerPage extends StatefulWidget {
   TimerPageState createState() => TimerPageState();
 }
 
+// Константы для настройки таймаутов
+const Duration kVoiceServiceTimeout = Duration(seconds: 60);
+const Duration kVoicePermissionWaitTimeout = Duration(seconds: 180);
+
 class TimerPageState extends State<TimerPage> {
-  // Объявляем ValueNotifier для статуса загрузки
+  // ValueNotifier для отображения статуса загрузки голосового сервиса.
   final ValueNotifier<String> loadingStatus = ValueNotifier(
     "Initializing voice service...",
   );
-  // Определяем переменную currentLanguage как поле класса с значением по умолчанию.
+  // Текущий язык синтеза речи.
   String currentLanguage = "en-US";
+  // Флаг, получено ли разрешение на использование микрофона.
+  // Теперь не используется для запроса – будем проверять через Permission.microphone.status.
   bool _micPermissionGranted = false;
 
   final FlutterTts flutterTts = FlutterTts();
@@ -404,7 +381,9 @@ class TimerPageState extends State<TimerPage> {
   bool isActive = false;
   double volume = 1.0;
   int intervalSeconds = 30;
+  // Опция голосового управления, которую пользователь может включать/выключать через настройки.
   bool voiceControlEnabled = true;
+  // Флаг активности голосового распознавания (отражается в индикаторе).
   bool voiceRecognitionActive = false;
   bool immersiveModeEnabled = false;
 
@@ -416,6 +395,7 @@ class TimerPageState extends State<TimerPage> {
   late VoiceCommandService voiceService;
   StreamSubscription<VoiceCommandResult>? _voiceSub;
 
+  // Рассчитываем общее время с учётом накопленного времени.
   Duration get elapsed {
     if (isActive && _startTime != null) {
       return _accumulated + DateTime.now().difference(_startTime!);
@@ -423,6 +403,7 @@ class TimerPageState extends State<TimerPage> {
     return _accumulated;
   }
 
+  // Рассчитываем время текущего круга.
   Duration get currentLapElapsed {
     if (isActive && _lapStartTime != null) {
       return DateTime.now().difference(_lapStartTime!);
@@ -430,39 +411,114 @@ class TimerPageState extends State<TimerPage> {
     return Duration.zero;
   }
 
+  /// Инициализирует голосовой сервис с модальным окном.
+  ///
+  /// 1. Сначала загружается языковая модель и создаётся распознаватель (initSpeechService отключён).
+  /// 2. После успешной загрузки моделью в модальном окне обновляется сообщение на
+  ///    "Language model loaded. Waiting for microphone permission...".
+  /// 3. Затем запрашивается разрешение на микрофон (системный диалог).
+  /// 4. Если разрешение уже получено – сразу инициализируется микрофонный сервис и распознавание запускается.
+  /// 5. Если статус равен denied, permanentlyDenied или restricted – окно закрывается и голосовое управление отключается.
+  /// 6. Если же статус не установлен (пользователь ещё не сделал выбор) – начинается ожидание с таймаутом kVoicePermissionWaitTimeout.
   Future<void> _initializeVoiceServiceWithModal() async {
-    // Показываем модальное окно загрузки
     _showLoadingModelDialog();
-    // Обновляем статус
     loadingStatus.value = "Initializing voice service...";
     try {
-      // Пытаемся инициализировать сервис с таймаутом 30 секунд
+      // Загружаем языковую модель и создаём распознаватель без инициализации микрофонного сервиса.
       await voiceService
-          .initialize(loadingStatus: loadingStatus)
-          .timeout(const Duration(seconds: 60));
-      loadingStatus.value = "Voice service initialized.";
-      // Закрываем диалог
-      Navigator.of(context).pop();
-      // Если голосовой сервис включён, запускаем его
-      if (voiceControlEnabled) {
+          .initialize(loadingStatus: loadingStatus, initSpeechService: false)
+          .timeout(kVoiceServiceTimeout);
+      loadingStatus.value =
+          "Language model loaded. Waiting for microphone permission...";
+
+      // Запрашиваем разрешение на микрофон.
+      // (Мы не вызывали request() в initState, чтобы сохранить неопределённое состояние.)
+      final micStatus = await Permission.microphone.request();
+      // Если разрешение получено – запускаем сервис.
+      if (micStatus.isGranted) {
+        loadingStatus.value = "Starting speech service...";
+        await voiceService.initializeSpeechService();
+        Navigator.of(context).pop();
         await _startSpeechService();
       }
+      // Если статус явно отказан – закрываем модальное окно и отключаем голосовое управление.
+      else if (micStatus == PermissionStatus.denied ||
+          micStatus.isPermanentlyDenied ||
+          micStatus.isRestricted) {
+        Navigator.of(context).pop();
+        setState(() {
+          voiceControlEnabled = false;
+          voiceRecognitionActive = false;
+        });
+        appLog(
+          "Microphone permission explicitly denied; voice service disabled.",
+          name: "TimerPage",
+        );
+      }
+      // Если статус не определён (теоретически) – начинаем ожидание.
+      else {
+        loadingStatus.value = "Waiting for microphone permission...";
+        bool granted = await _waitForPermission(kVoicePermissionWaitTimeout);
+        Navigator.of(context).pop();
+        if (granted) {
+          loadingStatus.value = "Starting speech service...";
+          await voiceService.initializeSpeechService();
+          await _startSpeechService();
+        } else {
+          setState(() {
+            voiceControlEnabled = false;
+            voiceRecognitionActive = false;
+          });
+          appLog(
+            "Microphone permission not granted within timeout; voice service disabled.",
+            name: "TimerPage",
+          );
+        }
+      }
     } catch (e) {
-      // Если произошла ошибка (например, отсутствует интернет)
       loadingStatus.value = "Initialization failed: ${e.toString()}";
       appLog("Voice service initialization failed: $e", name: "TimerPage");
-      // Ждём несколько секунд, чтобы пользователь увидел сообщение, затем закрываем диалог
       await Future.delayed(const Duration(seconds: 2));
       Navigator.of(context).pop();
-      // Отключаем голосовой сервис
       setState(() {
         voiceRecognitionActive = false;
       });
     }
   }
 
+  /// Ожидает изменения статуса разрешения микрофона в течение заданного таймаута.
+  /// Периодически (каждые 500 мс) проверяет статус.
+  /// Возвращает true, если разрешение получено, иначе false.
+  Future<bool> _waitForPermission(Duration timeout) async {
+    const int checkIntervalMs = 500;
+    final int maxChecks = timeout.inMilliseconds ~/ checkIntervalMs;
+    for (int i = 0; i < maxChecks; i++) {
+      await Future.delayed(const Duration(milliseconds: checkIntervalMs));
+      final status = await Permission.microphone.status;
+      if (status.isGranted) return true;
+      // Если статус явно запрещён – прекращаем ожидание.
+      if (status == PermissionStatus.denied ||
+          status.isPermanentlyDenied ||
+          status.isRestricted)
+        return false;
+    }
+    return false;
+  }
+
+  /// Запускает голосовой сервис для распознавания речи.
   Future<void> _startSpeechService() async {
     loadingStatus.value = "Starting speech service...";
+    final micStatus = await Permission.microphone.status;
+    if (!micStatus.isGranted) {
+      setState(() {
+        voiceRecognitionActive = false;
+      });
+      appLog(
+        "Microphone permission not granted; not starting speech service.",
+        name: "TimerPage",
+      );
+      return;
+    }
     try {
       await voiceService.startListening();
       setState(() {
@@ -475,17 +531,21 @@ class TimerPageState extends State<TimerPage> {
         name: "TimerPage",
         stackTrace: st,
       );
-      // Попытка перезапуска, если ошибка
       await _restartSpeechService();
     }
   }
 
+  /// Перезапускает голосовой сервис.
   Future<void> _restartSpeechService() async {
     appLog("Restarting speech service...", name: "TimerPage");
     await _stopSpeechService();
     await Future.delayed(const Duration(seconds: 2));
     try {
-      await voiceService.initialize(loadingStatus: loadingStatus);
+      await voiceService.initialize(
+        loadingStatus: loadingStatus,
+        initSpeechService: false,
+      );
+      await voiceService.initializeSpeechService();
       await _startSpeechService();
       appLog("Speech service restarted.", name: "TimerPage");
     } catch (e, st) {
@@ -497,6 +557,7 @@ class TimerPageState extends State<TimerPage> {
     }
   }
 
+  /// Останавливает голосовой сервис.
   Future<void> _stopSpeechService() async {
     loadingStatus.value = "Stopping speech service...";
     try {
@@ -514,7 +575,7 @@ class TimerPageState extends State<TimerPage> {
     }
   }
 
-  // Функция показа модального окна загрузки модели.
+  /// Показывает модальное окно с индикатором загрузки/ожидания.
   Future<void> _showLoadingModelDialog() async {
     showDialog(
       context: context,
@@ -529,7 +590,7 @@ class TimerPageState extends State<TimerPage> {
                   child: ValueListenableBuilder<String>(
                     valueListenable: loadingStatus,
                     builder: (context, value, child) {
-                      appLog("value: $value", name: "UI STATUS");
+                      appLog("Loading status: $value", name: "UI STATUS");
                       return Text(value);
                     },
                   ),
@@ -543,32 +604,21 @@ class TimerPageState extends State<TimerPage> {
   @override
   void initState() {
     super.initState();
-    // Запрашиваем разрешение и сохраняем результат.
-    requestMicrophonePermission().then((granted) {
-      setState(() {
-        _micPermissionGranted = granted;
-        if (!granted) {
-          // Если разрешение не получено, автоматически выключаем голосовое распознавание.
-          voiceControlEnabled = false;
-          voiceRecognitionActive = false;
-        }
-      });
-    });
+    // Здесь мы НЕ запрашиваем разрешение, чтобы не фиксировать результат заранее.
     _loadSettings();
 
-    // Устанавливаем язык для синтеза речи.
+    // Настраиваем синтез речи.
     flutterTts.setLanguage(currentLanguage);
     flutterTts.setVolume(volume);
 
-    // Инициализация голосового сервиса.
+    // Инициализируем голосовой сервис.
     voiceService = VoiceCommandService();
 
-    // Используем addPostFrameCallback, чтобы работать с context уже после build().
+    // После построения UI запускаем инициализацию голосового сервиса с модальным окном.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Запускаем инициализацию голосового сервиса с модальным окном, показывающим актуальный статус.
       await _initializeVoiceServiceWithModal();
 
-      // Подписываемся на поток команд
+      // Подписываемся на поток голосовых команд.
       _voiceSub = voiceService.commandStream.listen(
         (result) {
           setState(() {
@@ -593,6 +643,7 @@ class TimerPageState extends State<TimerPage> {
       _maybeShowHelpDialog();
     });
 
+    // UI-таймер для обновления экрана и голосового объявления интервалов.
     _uiTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
       if (isActive && _startTime != null) {
         setState(() {});
@@ -611,6 +662,7 @@ class TimerPageState extends State<TimerPage> {
     });
   }
 
+  /// Отображает диалог помощи при первом запуске.
   Future<void> _maybeShowHelpDialog() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     bool helpShown = prefs.getBool('helpShown') ?? false;
@@ -622,6 +674,7 @@ class TimerPageState extends State<TimerPage> {
     }
   }
 
+  /// Форматирует строку для голосового объявления интервала.
   String _formatIntervalAnnouncement(Duration duration) {
     int totalSeconds = duration.inSeconds;
     int minutes = totalSeconds ~/ 60;
@@ -635,6 +688,7 @@ class TimerPageState extends State<TimerPage> {
     }
   }
 
+  /// Форматирует время в строку формата MM:SS:CC.
   String _formatTime(Duration duration) {
     int minutes = duration.inMinutes;
     int seconds = duration.inSeconds % 60;
@@ -642,6 +696,7 @@ class TimerPageState extends State<TimerPage> {
     return "${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}:${centiseconds.toString().padLeft(2, '0')}";
   }
 
+  /// Форматирует время для голосового объявления (без сотых).
   String _formatAnnouncement(Duration duration) {
     int minutes = duration.inMinutes;
     int seconds = duration.inSeconds % 60;
@@ -652,6 +707,7 @@ class TimerPageState extends State<TimerPage> {
     }
   }
 
+  /// Обрабатывает команду записи круга.
   void _handleLap() {
     if (isActive && _lapStartTime != null) {
       Duration currentLap = DateTime.now().difference(_lapStartTime!);
@@ -673,6 +729,7 @@ class TimerPageState extends State<TimerPage> {
     }
   }
 
+  /// Обрабатывает голосовые команды, полученные от сервиса.
   void _handleVoiceCommand(String commandText) {
     appLog("Voice command received: $commandText", name: "TimerPage");
     if (commandText.contains("start") ||
@@ -727,6 +784,7 @@ class TimerPageState extends State<TimerPage> {
     }
   }
 
+  /// Загружает настройки (громкость, интервал, голосовое управление, immersive mode).
   Future<void> _loadSettings() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -738,6 +796,7 @@ class TimerPageState extends State<TimerPage> {
     flutterTts.setVolume(volume);
   }
 
+  /// Сохраняет настройки.
   Future<void> _saveSettings() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('volume', volume);
@@ -746,10 +805,10 @@ class TimerPageState extends State<TimerPage> {
     await prefs.setBool('immersiveMode', immersiveModeEnabled);
   }
 
-  // В ландшафтном режиме с записями фиксированно располагаем кнопки в нижней области.
+  /// Виджет для фиксированных кнопок (например, в ландшафтном режиме).
   Widget _buildFixedButtons() {
     return Container(
-      height: 80, // фиксированная высота для кнопок
+      height: 80,
       padding: const EdgeInsets.only(top: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -796,6 +855,7 @@ class TimerPageState extends State<TimerPage> {
     );
   }
 
+  /// Таблица записей кругов.
   Widget _buildLapTable() {
     return Expanded(
       child: Column(
@@ -877,6 +937,7 @@ class TimerPageState extends State<TimerPage> {
     );
   }
 
+  /// Возвращает кнопку "Lap" (если таймер активен) или "Reset" (если таймер остановлен).
   Widget _buildLapOrResetButton() {
     if (isActive) {
       return ElevatedButton(
@@ -916,6 +977,7 @@ class TimerPageState extends State<TimerPage> {
     }
   }
 
+  /// Обработчик кнопки сброса таймера.
   void _handleReset() {
     flutterTts.speak("Stopwatch in zero");
     setState(() {
@@ -943,7 +1005,7 @@ class TimerPageState extends State<TimerPage> {
     Widget bodyContent;
 
     if (orientation == Orientation.portrait || _lapRecords.isEmpty) {
-      // Одноколоночный макет (как в портретном режиме или если нет записей)
+      // Одноколоночный макет (портрет или отсутствие записей).
       Widget upperGroup;
       if (_lapRecords.isEmpty) {
         upperGroup = Container(
@@ -964,7 +1026,7 @@ class TimerPageState extends State<TimerPage> {
               color: voiceRecognitionActive ? Colors.green : Colors.red,
               size: 40,
             ),
-            const SizedBox(height: 8), // уменьшили с 10 до 8 пикселей
+            const SizedBox(height: 8),
             SizedBox(
               height: 20,
               child: Center(
@@ -1078,11 +1140,9 @@ class TimerPageState extends State<TimerPage> {
       );
     } else {
       // Ландшафтный режим с записями: делим экран на две колонки.
-      // Левая колонка: все элементы кроме таблицы, с уменьшенными размерами.
       Widget leftColumn = Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Подтягиваем часы к верхнему краю, уменьшаем размер шрифта.
           Text(
             _formatTime(elapsed),
             style: const TextStyle(fontSize: 60, color: Colors.white),
@@ -1102,8 +1162,7 @@ class TimerPageState extends State<TimerPage> {
             color: voiceRecognitionActive ? Colors.green : Colors.red,
             size: 30,
           ),
-          // Если нужно уменьшить отступ между иконкой и следующим элементом, можно изменить SizedBox:
-          const SizedBox(height: 8), // вместо 10 пикселей
+          const SizedBox(height: 8),
           SizedBox(
             height: 20,
             child: Center(
@@ -1121,12 +1180,10 @@ class TimerPageState extends State<TimerPage> {
               ),
             ),
           ),
-          // Заполняем оставшееся пространство, чтобы кнопки были фиксированы внизу.
           const Spacer(),
           _buildFixedButtons(),
         ],
       );
-      // Правая колонка – таблица кругов.
       Widget rightColumn = _buildLapTable();
       bodyContent = Row(
         children: [
@@ -1185,14 +1242,13 @@ class TimerPageState extends State<TimerPage> {
         backgroundColor: const Color(0xFF001F3F),
         body: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
-          child:
-              bodyContent, // оставьте ваш существующий UI-контент без изменений
+          child: bodyContent,
         ),
       ),
     );
   }
 
-  // Единственная реализация _showHelpDialog.
+  /// Показывает диалог справки.
   void _showHelpDialog() {
     showDialog(
       context: context,
