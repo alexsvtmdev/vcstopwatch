@@ -318,34 +318,38 @@ class VoiceCommandService {
 const bool kEnableSplashDelayForPromo =
     false; // Используйте true для ролика с задержкой сплешскрина.
 
-void main() async {
-  // Инициализируем привязки сразу, чтобы избежать проблем с зонами.
-  WidgetsFlutterBinding.ensureInitialized();
-  final prefs = await SharedPreferences.getInstance();
-  final immersiveEnabled = prefs.getBool('immersiveMode') ?? false;
-
-  // Включаем immersive-режим, если нужно (полноэкранный режим в настрйоках)
-  if (immersiveEnabled) {
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-  }
-
-  // Если нужно задержать сплеш-экран
-  if (kEnableSplashDelayForPromo) {
-    WidgetsBinding.instance.deferFirstFrame();
-  }
-
-  // Перехватываем ошибки Flutter
-  FlutterError.onError = (FlutterErrorDetails details) {
-    appLog(
-      "FlutterError: ${details.exception}",
-      name: "FlutterError",
-      stackTrace: details.stack,
-    );
-  };
-
+void main() {
   runZonedGuarded(
     () async {
+      // Инициализация привязок внутри runZonedGuarded
+      WidgetsFlutterBinding.ensureInitialized();
+
+      final prefs = await SharedPreferences.getInstance();
+      final immersiveEnabled = prefs.getBool('immersiveMode') ?? false;
+
+      // Включаем immersive-режим, если нужно
+      if (immersiveEnabled) {
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      }
+
+      // Если нужно задержать сплеш-экран
+      if (kEnableSplashDelayForPromo) {
+        WidgetsBinding.instance.deferFirstFrame();
+      }
+
+      // Перехватываем ошибки Flutter
+      FlutterError.onError = (FlutterErrorDetails details) {
+        appLog(
+          "FlutterError: ${details.exception}",
+          name: "FlutterError",
+          stackTrace: details.stack,
+        );
+      };
+
+      // Запуск приложения
       runApp(const MyApp());
+
+      // Разрешаем показ первого кадра после задержки
       if (kEnableSplashDelayForPromo) {
         await Future.delayed(const Duration(seconds: 4));
         WidgetsBinding.instance.allowFirstFrame();
