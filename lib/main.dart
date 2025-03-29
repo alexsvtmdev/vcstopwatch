@@ -370,7 +370,7 @@ class TimerPageState extends State<TimerPage> {
   // Текущий язык синтеза речи.
   String currentLanguage = "en-US";
   // Флаг, получено ли разрешение на использование микрофона.
-  // Теперь не используется для запроса – будем проверять через Permission.microphone.status.
+  // (Проверяем через Permission.microphone.status, а request() вызывается сразу при старте)
   bool _micPermissionGranted = false;
 
   final FlutterTts flutterTts = FlutterTts();
@@ -381,7 +381,7 @@ class TimerPageState extends State<TimerPage> {
   bool isActive = false;
   double volume = 1.0;
   int intervalSeconds = 30;
-  // Опция голосового управления, которую пользователь может включать/выключать через настройки.
+  // Опция голосового управления, которую можно включать/выключать через настройки.
   bool voiceControlEnabled = true;
   // Флаг активности голосового распознавания (отражается в индикаторе).
   bool voiceRecognitionActive = false;
@@ -395,7 +395,7 @@ class TimerPageState extends State<TimerPage> {
   late VoiceCommandService voiceService;
   StreamSubscription<VoiceCommandResult>? _voiceSub;
 
-  // Рассчитываем общее время с учётом накопленного времени.
+  // Рассчитываем общее время, учитывая накопленное время.
   Duration get elapsed {
     if (isActive && _startTime != null) {
       return _accumulated + DateTime.now().difference(_startTime!);
@@ -411,40 +411,45 @@ class TimerPageState extends State<TimerPage> {
     return Duration.zero;
   }
 
+  /// Ожидает, пока разрешение микрофона не будет выдано.
+  /// Цикл повторно запрашивает разрешение каждые 2 секунды до истечения таймаута.
+  Future<bool> _waitForUserPermission(Duration timeout) async {
+    final endTime = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(endTime)) {
+      final status = await Permission.microphone.status;
+      if (status.isGranted) return true;
+      if (status.isPermanentlyDenied || status.isRestricted) return false;
+      await Future.delayed(const Duration(seconds: 2));
+    }
+    return false;
+  }
+
   /// Инициализирует голосовой сервис с модальным окном.
-  ///
-  /// 1. Сначала загружается языковая модель и создаётся распознаватель (initSpeechService отключён).
-  /// 2. После успешной загрузки моделью в модальном окне обновляется сообщение на
-  ///    "Language model loaded. Waiting for microphone permission...".
-  /// 3. Затем запрашивается разрешение на микрофон (системный диалог).
-  /// 4. Если разрешение уже получено – сразу инициализируется микрофонный сервис и распознавание запускается.
-  /// 5. Если статус равен denied, permanentlyDenied или restricted – окно закрывается и голосовое управление отключается.
-  /// 6. Если же статус не установлен (пользователь ещё не сделал выбор) – начинается ожидание с таймаутом kVoicePermissionWaitTimeout.
+  /// 1. Загружается языковая модель и создаётся распознаватель (initSpeechService: false).
+  /// 2. После загрузки модели обновляется сообщение на "Waiting for microphone permission...".
+  /// 3. Затем проверяется текущий статус разрешения (request() уже был вызван в initState).
+  ///    Если разрешение получено – запускается микрофонный сервис.
+  ///    Если статус равен permanentlyDenied или restricted – окно закрывается и опция отключается.
+  ///    Если статус равен denied – начинается ожидание через _waitForUserPermission().
   Future<void> _initializeVoiceServiceWithModal() async {
     _showLoadingModelDialog();
     loadingStatus.value = "Initializing voice service...";
     try {
-      // Загружаем языковую модель и создаём распознаватель без инициализации микрофонного сервиса.
+      // Загружаем языковую модель и создаём распознаватель без запуска микрофонного сервиса.
       await voiceService
           .initialize(loadingStatus: loadingStatus, initSpeechService: false)
           .timeout(kVoiceServiceTimeout);
-      loadingStatus.value =
-          "Language model loaded. Waiting for microphone permission...";
+      // После загрузки модели показываем сообщение ожидания.
+      loadingStatus.value = "Waiting for microphone permission...";
 
-      // Запрашиваем разрешение на микрофон.
-      // (Мы не вызывали request() в initState, чтобы сохранить неопределённое состояние.)
-      final micStatus = await Permission.microphone.request();
-      // Если разрешение получено – запускаем сервис.
+      // Проверяем статус разрешения (request() уже был вызван в initState).
+      final micStatus = await Permission.microphone.status;
       if (micStatus.isGranted) {
         loadingStatus.value = "Starting speech service...";
         await voiceService.initializeSpeechService();
         Navigator.of(context).pop();
         await _startSpeechService();
-      }
-      // Если статус явно отказан – закрываем модальное окно и отключаем голосовое управление.
-      else if (micStatus == PermissionStatus.denied ||
-          micStatus.isPermanentlyDenied ||
-          micStatus.isRestricted) {
+      } else if (micStatus.isPermanentlyDenied || micStatus.isRestricted) {
         Navigator.of(context).pop();
         setState(() {
           voiceControlEnabled = false;
@@ -454,11 +459,11 @@ class TimerPageState extends State<TimerPage> {
           "Microphone permission explicitly denied; voice service disabled.",
           name: "TimerPage",
         );
-      }
-      // Если статус не определён (теоретически) – начинаем ожидание.
-      else {
-        loadingStatus.value = "Waiting for microphone permission...";
-        bool granted = await _waitForPermission(kVoicePermissionWaitTimeout);
+      } else {
+        // Если статус равен denied (но не permanentlyDenied), начинаем ожидание.
+        bool granted = await _waitForUserPermission(
+          kVoicePermissionWaitTimeout,
+        );
         Navigator.of(context).pop();
         if (granted) {
           loadingStatus.value = "Starting speech service...";
@@ -484,25 +489,6 @@ class TimerPageState extends State<TimerPage> {
         voiceRecognitionActive = false;
       });
     }
-  }
-
-  /// Ожидает изменения статуса разрешения микрофона в течение заданного таймаута.
-  /// Периодически (каждые 500 мс) проверяет статус.
-  /// Возвращает true, если разрешение получено, иначе false.
-  Future<bool> _waitForPermission(Duration timeout) async {
-    const int checkIntervalMs = 500;
-    final int maxChecks = timeout.inMilliseconds ~/ checkIntervalMs;
-    for (int i = 0; i < maxChecks; i++) {
-      await Future.delayed(const Duration(milliseconds: checkIntervalMs));
-      final status = await Permission.microphone.status;
-      if (status.isGranted) return true;
-      // Если статус явно запрещён – прекращаем ожидание.
-      if (status == PermissionStatus.denied ||
-          status.isPermanentlyDenied ||
-          status.isRestricted)
-        return false;
-    }
-    return false;
   }
 
   /// Запускает голосовой сервис для распознавания речи.
@@ -557,15 +543,11 @@ class TimerPageState extends State<TimerPage> {
     }
   }
 
-  /// Останавливает голосовой сервис.
+  /// Останавливает голосовой сервис, создавая новый экземпляр для повторного включения.
   Future<void> _stopSpeechService() async {
     loadingStatus.value = "Stopping speech service...";
     try {
       await voiceService.stopListening();
-      setState(() {
-        voiceRecognitionActive = false;
-      });
-      appLog("Speech service stopped.", name: "TimerPage");
     } catch (e, st) {
       appLog(
         "Error stopping speech service: $e",
@@ -573,6 +555,12 @@ class TimerPageState extends State<TimerPage> {
         stackTrace: st,
       );
     }
+    setState(() {
+      voiceRecognitionActive = false;
+    });
+    voiceService.dispose();
+    voiceService = VoiceCommandService();
+    appLog("Speech service stopped and disposed.", name: "TimerPage");
   }
 
   /// Показывает модальное окно с индикатором загрузки/ожидания.
@@ -604,7 +592,13 @@ class TimerPageState extends State<TimerPage> {
   @override
   void initState() {
     super.initState();
-    // Здесь мы НЕ запрашиваем разрешение, чтобы не фиксировать результат заранее.
+    // Запрашиваем разрешение на микрофон сразу при старте приложения,
+    // чтобы системный диалог появился как можно раньше.
+    Permission.microphone.request().then((status) {
+      setState(() {
+        _micPermissionGranted = status.isGranted;
+      });
+    });
     _loadSettings();
 
     // Настраиваем синтез речи.
@@ -1407,19 +1401,15 @@ class SettingsPageState extends State<SettingsPage> {
                 },
               ),
             ),
-            // Внутри SettingsPageState.build(...), замените обработчик onChanged для SwitchListTile:
             SwitchListTile(
               title: const Text('Voice Control'),
               value: widget.state.voiceControlEnabled,
               onChanged: (bool value) async {
                 if (value) {
-                  // Пользователь пытается включить голосовое распознавание.
+                  // При включении голосового управления проверяем статус разрешения.
                   PermissionStatus status = await Permission.microphone.status;
-
-                  if (status.isDenied ||
-                      status.isRestricted ||
-                      status.isPermanentlyDenied) {
-                    // Показываем диалог с предложением открыть настройки
+                  if (status.isPermanentlyDenied) {
+                    // Если статус permanentlyDenied, показываем диалог с английскими кнопками.
                     final shouldOpenSettings = await showDialog<bool>(
                       context: context,
                       builder:
@@ -1434,50 +1424,46 @@ class SettingsPageState extends State<SettingsPage> {
                               TextButton(
                                 onPressed:
                                     () => Navigator.of(context).pop(false),
-                                child: const Text("Отмена"),
+                                child: const Text("Cancel"),
                               ),
                               TextButton(
                                 onPressed:
                                     () => Navigator.of(context).pop(true),
-                                child: const Text("Открыть настройки"),
+                                child: const Text("Open Settings"),
                               ),
                             ],
                           ),
                     );
-
                     if (shouldOpenSettings == true) {
-                      // Открываем системные настройки приложения
                       await openAppSettings();
                     }
-
-                    // Отключаем переключатель обратно
                     setState(() {
                       widget.state.voiceControlEnabled = false;
                       widget.state.voiceRecognitionActive = false;
                     });
                     await widget.state._saveSettings();
                     return;
-                  }
-
-                  // Разрешение уже есть или только что получено
-                  final micGranted = await requestMicrophonePermission();
-                  if (!micGranted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          "Microphone permission not granted. Voice recognition disabled.",
+                  } else {
+                    // Иначе повторно запрашиваем разрешение.
+                    final newStatus = await Permission.microphone.request();
+                    if (!newStatus.isGranted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            "Microphone permission not granted. Voice recognition disabled.",
+                          ),
                         ),
-                      ),
-                    );
-                    setState(() {
-                      widget.state.voiceControlEnabled = false;
-                      widget.state.voiceRecognitionActive = false;
-                    });
-                    await widget.state._saveSettings();
-                    return;
+                      );
+                      setState(() {
+                        widget.state.voiceControlEnabled = false;
+                        widget.state.voiceRecognitionActive = false;
+                      });
+                      await widget.state._saveSettings();
+                      return;
+                    }
                   }
 
-                  // Всё в порядке — включаем
+                  // Если разрешение получено, включаем голосовое управление.
                   setState(() {
                     widget.state.voiceControlEnabled = true;
                   });
@@ -1502,7 +1488,7 @@ class SettingsPageState extends State<SettingsPage> {
                         );
                       });
                 } else {
-                  // Выключение распознавания
+                  // При выключении голосового управления останавливаем сервис.
                   setState(() {
                     widget.state.voiceControlEnabled = false;
                   });
@@ -1530,18 +1516,13 @@ class SettingsPageState extends State<SettingsPage> {
               },
             ),
             SwitchListTile(
-              title: const Text("Full screen mode (immersive)"),
+              title: const Text("Full screen mode"),
               value: widget.state.immersiveModeEnabled,
               onChanged: (bool value) {
-                // Мгновенно обновляем UI
                 setState(() {
                   widget.state.immersiveModeEnabled = value;
                 });
-
-                // Сохраняем в настройки
                 widget.state._saveSettings();
-
-                // Показываем Flushbar после перерисовки, чтобы не мешать переключателю
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   Flushbar(
                     message:
