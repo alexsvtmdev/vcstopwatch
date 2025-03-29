@@ -359,6 +359,7 @@ class TimerPage extends StatefulWidget {
 }
 
 // Константы для настройки таймаутов
+// Константы для настройки таймаутов
 const Duration kVoiceServiceTimeout = Duration(seconds: 60);
 const Duration kVoicePermissionWaitTimeout = Duration(seconds: 180);
 
@@ -413,13 +414,15 @@ class TimerPageState extends State<TimerPage> {
 
   /// Ожидает, пока разрешение микрофона не будет выдано.
   /// Цикл повторно запрашивает разрешение каждые 2 секунды до истечения таймаута.
-  Future<bool> _waitForUserPermission(Duration timeout) async {
-    final endTime = DateTime.now().add(timeout);
+  Future<bool> _waitForUserPermission() async {
+    final endTime = DateTime.now().add(kVoicePermissionWaitTimeout);
     while (DateTime.now().isBefore(endTime)) {
       final status = await Permission.microphone.status;
       if (status.isGranted) return true;
+      // Если статус явно запрещён – прекращаем ожидание.
       if (status.isPermanentlyDenied || status.isRestricted) return false;
       await Future.delayed(const Duration(seconds: 2));
+      await Permission.microphone.request();
     }
     return false;
   }
@@ -461,9 +464,7 @@ class TimerPageState extends State<TimerPage> {
         );
       } else {
         // Если статус равен denied (но не permanentlyDenied), начинаем ожидание.
-        bool granted = await _waitForUserPermission(
-          kVoicePermissionWaitTimeout,
-        );
+        bool granted = await _waitForUserPermission();
         Navigator.of(context).pop();
         if (granted) {
           loadingStatus.value = "Starting speech service...";
